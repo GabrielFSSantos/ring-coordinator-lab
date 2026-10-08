@@ -2,6 +2,17 @@
 
 Arquivo: [`docker-compose.yml`](../../docker-compose.yml) na raiz do repositório.
 
+## Profiles
+
+| Profile | Uso | Serviços principais |
+| --- | --- | --- |
+| `local` | 1 PC, bridge `172.25.0.x` | `storage`, 4× `ubuntu-node-*`, `lab-tail` |
+| `storage` | LAN — PC do banco | `lan-storage`, `lan-tail` |
+| `nodes` | LAN — processos nó (`host`) | `lan-node` (supervisor `NODE_COUNT`) |
+| `tail` | LAN — só narrativa global | `lan-tail` (poll em `STORAGE_URL` remoto) |
+
+Combinações comuns: `storage`+`nodes` no PC-A; `nodes` no PC-B; `tail` em qualquer PC observador. Variáveis: [`lab.env.example`](../../lab.env.example). Roteiro 8 nós: [18_lan_dois_pcs_casa.md](18_lan_dois_pcs_casa.md).
+
 ## Rede
 
 - Nome: `app_network`, driver `bridge`.

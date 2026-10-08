@@ -1,5 +1,5 @@
 # Local: docker compose --profile local --env-file lab.env up --build
-# LAN:   docker compose --profile storage|nodes --env-file lab.env up --build
+# LAN:   docker compose --profile storage|nodes|tail --env-file lab.env up --build
 # Remova órfãos antigos (postgres/pgadmin): --remove-orphans
 
 x-node-common: &node-common
@@ -17,6 +17,22 @@ x-node-common: &node-common
     - storage
   networks:
     app_network: {}
+
+x-lan-tail-common: &lan-tail-common
+  attach: false
+  build:
+    context: .
+    dockerfile: src/Dockerfile
+  container_name: lan-tail
+  command: ["node", "log-viewer/bootstrap/main.js"]
+  env_file:
+    - lab.env
+  environment:
+    HOSTNAME: lab-tail
+    LAB_HOST_NAME: lab-tail
+    LOG_STDOUT_MODE: timeline_all
+    LOG_TIMELINE_PERSIST: "true"
+  network_mode: host
 
 services:
   storage:
@@ -143,7 +159,7 @@ services:
       app_network:
         ipv4_address: 172.25.0.20
 
-  # LAN: --profile storage | nodes | storage+nodes  (ver lab.env.example)
+  # LAN: storage | nodes | tail (observador) — ver lab.env.example
   lan-storage:
     profiles: ["storage"]
     build:
@@ -159,23 +175,8 @@ services:
       - ./data:/data
 
   lan-tail:
-    profiles: ["storage"]
-    attach: false
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    container_name: lan-tail
-    command: ["node", "log-viewer/bootstrap/main.js"]
-    env_file:
-      - lab.env
-    environment:
-      HOSTNAME: lab-tail
-      LAB_HOST_NAME: lab-tail
-      LOG_STDOUT_MODE: timeline_all
-      LOG_TIMELINE_PERSIST: "true"
-    depends_on:
-      - lan-storage
-    network_mode: host
+    profiles: ["storage", "tail"]
+    <<: *lan-tail-common
 
   lan-node:
     profiles: ["nodes"]

@@ -52,20 +52,31 @@ CLUSTER_PEERS=IP_A:3002,IP_A:3003,IP_A:3004,IP_A:3005,IP_B:3006,IP_B:3007,IP_B:3
 
 `ADVERTISE_HOST` = IP alcançável pelo outro PC (WSL2: IP Wi‑Fi do Windows).
 
-## Logs (vários nós no mesmo terminal)
+## Logs e leitura do banco (qualquer PC)
 
-**Narrativa global dos 8 nós** (timeline no storage; título com PC de origem):
+A timeline e o ledger vivem no **storage do PC-A**. Qualquer máquina na LAN com `STORAGE_URL` correto pode **ler** o banco (GET sem token) e seguir a narrativa.
 
-No **PC do banco**, com profile `storage` sobe também o serviço `lan-tail`:
+Checklist rápido em cada PC:
 
 ```bash
-docker compose --profile storage --env-file lab.env up --build
-docker compose --profile storage logs -f lan-tail
+curl http://<IP-BANCO>:4000/v1/health
+curl http://<IP-BANCO>:4000/v1/balance
+curl "http://<IP-BANCO>:4000/v1/ledger?limit=5"
 ```
+
+**Narrativa global dos 8 nós** (título com `LAB_HOST_NAME` de quem gerou o evento):
+
+| Onde | Como |
+| --- | --- |
+| PC do banco | `docker compose --profile storage --env-file lab.env up --build` → `logs -f lan-tail` |
+| PC-B (ou outro) | `./scripts/lan-tail.sh` ou `docker compose --profile tail --env-file lab.env up` |
+| Sem Docker | `cd src && npm run tail` |
+
+No PC-B com nós **e** tail: terminal 1 → `--profile nodes`; terminal 2 → `./scripts/lan-tail.sh logs` (ou `npm run tail`). **Não** use `--profile local` na LAN.
 
 Cada linha usa `LAB_HOST_NAME` do nó que gravou o evento (ex.: `pc-sala-a · ubuntu-node-3006 · …`). Defina nomes **únicos** por PC no `lab.env` (`LAB_HOST_NAME=pc-sala-a` vs `pc-sala-b`).
 
-Alternativa sem container: no PC do banco, `LOG_STDOUT_MODE=timeline_all` no `lab.env` e `cd src && npm run tail`.
+No PC do banco, evite dois `lan-tail` ao mesmo tempo (profile `storage` já sobe um; não rode `--profile tail` em paralelo no mesmo host).
 
 Linhas de containers de nó podem intercalar no `docker compose logs`. Para um processo só:
 

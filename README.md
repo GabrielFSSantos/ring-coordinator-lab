@@ -21,7 +21,8 @@ Simulação de **eleição em anel**, **mutex centralizado** e **ledger** (saldo
 | **LAN — só banco** | `docker compose --profile storage --env-file lab.env up --build` |
 | **LAN — só nós** | `docker compose --profile nodes --env-file lab.env up --build` |
 | **LAN — banco + nós** | `docker compose --profile storage --profile nodes --env-file lab.env up --build` |
-| **npm (sem Docker)** | `cd src && npm run storage` (banco) · `npm run server` (nó) |
+| **LAN — só observar** (tail remoto) | `docker compose --profile tail --env-file lab.env up --build` ou `./scripts/lan-tail.sh` |
+| **npm (sem Docker)** | `cd src && npm run storage` (banco) · `npm run server` (nó) · `npm run tail` (narrativa) |
 
 Docker local: `lab.env` na raiz já aponta para `172.25.0.10` e `DISCOVERY_MODE=off`.
 
@@ -40,7 +41,17 @@ docker compose --profile local logs -f lab-tail                 # narrativa glob
 
 Defina `LAB_HOST_NAME` no `lab.env` de cada PC para distinguir máquinas na LAN.
 
-Sem Docker: `cd src && npm run tail` (com `STORAGE_URL` e `LOG_STDOUT_MODE=timeline_all` no `lab.env`).
+### Observador em qualquer PC (LAN)
+
+O banco fica **só** no PC-A; leitura (`GET /v1/balance`, `/v1/ledger`, `/v1/timeline-events`) é HTTP **sem token** na porta 4000. Em todo PC, use o **mesmo** `STORAGE_URL=http://<IP-PC-A>:4000`.
+
+Três formas de ver a narrativa global (`lab_host_name` de cada evento):
+
+1. Docker: `./scripts/lan-tail.sh` ou `docker compose --profile tail --env-file lab.env up` + `logs -f lan-tail`
+2. Sem Docker: `cd src && npm run tail` (defina `STORAGE_URL` no `lab.env`)
+3. No PC do banco, o profile `storage` já inclui `lan-tail` (`logs -f lan-tail`)
+
+No mesmo PC, não suba dois `lan-tail` (mesmo `container_name`). Teste de rede: `curl http://<IP-BANCO>:4000/v1/health`.
 
 Ajustes visuais: `LOG_STYLE=box`, `LOG_DETAIL=false`, `LOG_TX_STORY=true`. Detalhes: [docs/documentation/19_convencoes_codigo_e_logs.md](docs/documentation/19_convencoes_codigo_e_logs.md).
 

@@ -56,7 +56,7 @@ poller.start();
 writeOpsLine(config.logDockerOps, {
   labHostName: config.labHostName,
   service: "lab-tail",
-  message: `seguindo timeline (${config.storageUrl}) — use: docker compose --profile local logs -f lab-tail`,
+  message: `seguindo timeline (${config.storageUrl}) — logs: docker compose logs -f lab-tail ou lan-tail; ou npm run tail`,
 });
 
 process.on("SIGINT", () => {

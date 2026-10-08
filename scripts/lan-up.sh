@@ -5,6 +5,7 @@
 #   ./scripts/lan-up.sh storage
 #   ./scripts/lan-up.sh nodes
 #   ./scripts/lan-up.sh both    # storage + nodes
+#   ./scripts/lan-up.sh tail    # só narrativa (STORAGE_URL remoto)
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,8 +30,11 @@ case "$MODE" in
   both)
     exec docker compose --profile storage --profile nodes --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build "${@:2}"
     ;;
+  tail)
+    exec docker compose --profile tail --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build "${@:2}"
+    ;;
   *)
-    echo "Modo: local | storage | nodes | both" >&2
+    echo "Modo: local | storage | nodes | both | tail" >&2
     exit 1
     ;;
 esac
