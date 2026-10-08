@@ -10,7 +10,7 @@ Algoritmo de eleição em anel O(n²) que Chang–Roberts melhora.
 
 ## No lab
 
-Lista de participantes na `ELEICAO` é mais próxima da ideia de **coletar participantes** do que do LCR puro.
+Lista de participantes na `election_round` é mais próxima da ideia de **coletar participantes** do que do LCR puro.
 
 ## Ver também
 

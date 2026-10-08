@@ -31,12 +31,25 @@ Entrada na raiz do repositório: [README.md](../README.md).
 | --- | --- |
 | Rede Docker, IPs, portas, healthcheck | [02_infra_docker_compose.md](documentation/02_infra_docker_compose.md), [appendix_variaveis_ambiente.md](documentation/appendix_variaveis_ambiente.md) |
 | Eleição, sucessor, critério de líder | [05_eleicao_em_anel.md](documentation/05_eleicao_em_anel.md), [07_contrato_socket_io.md](documentation/07_contrato_socket_io.md) |
-| Mutex, fila, gravação | [06_exclusao_mutua_centralizada.md](documentation/06_exclusao_mutua_centralizada.md), [09_persistencia_postgres.md](documentation/09_persistencia_postgres.md) |
+| Mutex, fila, gravação | [06_exclusao_mutua_centralizada.md](documentation/06_exclusao_mutua_centralizada.md), [09_persistencia_sqlite.md](documentation/09_persistencia_sqlite.md) |
 | Falha, timeout, reeleição | [10_falhas_e_recuperacao.md](documentation/10_falhas_e_recuperacao.md) |
 | Novo evento ou payload | [07_contrato_socket_io.md](documentation/07_contrato_socket_io.md), [appendix_eventos_payloads.md](documentation/appendix_eventos_payloads.md) |
 | Decisão de desenho | [decision-register.md](decision-register.md) |
 | Lacuna / débito técnico | [engineering_backlog.md](documentation/engineering_backlog.md), [12_invariantes_e_limites.md](documentation/12_invariantes_e_limites.md) |
 | Testes e CI local | [15_testes_e_gate.md](documentation/15_testes_e_gate.md) |
+| Simulação LAN / ledger | [17_simulacao_lan_ledger.md](documentation/17_simulacao_lan_ledger.md) |
+| Dois PCs em casa (8 nós) | [18_lan_dois_pcs_casa.md](documentation/18_lan_dois_pcs_casa.md) |
+| Planos de execução (backend LAN + UI) | [plans/README.md](plans/README.md) · [finalizacao-backend-operacao/](plans/finalizacao-backend-operacao/README.md) · [14 LAN multi-host](plans/finalizacao-backend-operacao/14-cenario-lan-multi-host.md) · [16 lab.env](plans/finalizacao-backend-operacao/16-lab-env-referencia-comportamento.md) |
+| Console web (após implementação) | `documentation/18_console_lab.md` (a criar na fase código) |
 | Nova referência / PDF | [bibliografia.bib](references/bibliografia.bib), [references/notas/](references/notas/), [mapa_literatura_codigo.md](references/mapa_literatura_codigo.md) |
+
+## Planos em `docs/plans/`
+
+| Pacote | Uso |
+| --- | --- |
+| [refatoracao-fundamentos/](plans/refatoracao-fundamentos/README.md) | SQLite local, camadas, gate inicial |
+| [simulacao-lan-ledger/](plans/simulacao-lan-ledger/README.md) | Baseline storage HTTP + ledger |
+| [finalizacao-backend-operacao/](plans/finalizacao-backend-operacao/README.md) | Compose único, mDNS, demo, logs, API controle |
+| [console-frontend-lab/](plans/console-frontend-lab/README.md) | SPA observabilidade e comandos |
 
 Índice da série numerada: [documentation/README.md](documentation/README.md).

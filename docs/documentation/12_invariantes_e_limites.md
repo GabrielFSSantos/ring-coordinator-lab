@@ -7,7 +7,7 @@ Separação útil para **relatório**, **banca** e **edição de código**: o qu
 | Afirmação | Base |
 | --- | --- |
 | Processos comunicam por mensagens (Socket.IO), sem memória compartilhada entre nós | Arquitetura |
-| Existe no máximo um coordenador **por rodada de eleição concluída** em cluster estável | `COORDENADOR` + critério `max(porta)` |
+| Existe no máximo um coordenador **por rodada de eleição concluída** em cluster estável | `coordinator_announce` + critério `max(porta)` |
 | Acesso ao log compartilhado passa pelo coordenador | `log_request` / fila |
 | Gravações no coordenador são serializadas pela fila JS | `isProcessing` + um `processRequest` ativo |
 | Falha de resposta do coordenador dispara tentativa de nova eleição | Timeout 10s + `Disconnect` |
@@ -27,13 +27,9 @@ Separação útil para **relatório**, **banca** e **edição de código**: o qu
 
 Documentadas também em [engineering_backlog.md](engineering_backlog.md):
 
-- Handler `log_request` condicionado ao momento da conexão.
-- Testes Jest desalinhados (`DistributedNode.test.js` importa arquivo inexistente).
-- Schema sem PK; `INSERT` sem `RETURNING` mas log referencia `res.rows[0]`.
-- Healthcheck pgAdmin incorreto no compose.
-- Sleeps fixos (5s, 15s, 80s) sem justificativa algorítmica.
-- `electSuccessor` recursivo sem limite se rede indisponível.
-- Fila descarta pedidos quando cheia (6 itens).
+- Variante de eleição não é Chang–Roberts (**B-CR1**).
+- Partição de rede não tratada; possível split-brain.
+- SQLite único (SPOF) — adequado ao escopo didático.
 
 ## Para defesa oral
 

@@ -1,47 +1,42 @@
 # 07 Contrato Socket.IO
 
-Servidor: cada nó escuta em `NODE_PORT`. Clientes: `socket.io-client` em `connecToNode` (`http://IP:PORT`), com resolução da Promise após **3s** (não exige `connected`).
+Servidor: cada nó escuta em `NODE_PORT`. Clientes: `connectPeer` em `infrastructure/socket/SocketPeerClient.js` (resolve em `connect`, `connect_error` ou timeout).
 
-## Eventos no servidor (`initServer`)
+Constantes no código: [`src/server/domain/protocol/socketEvents.js`](../../src/server/domain/protocol/socketEvents.js).
+
+## Eventos no servidor
 
 | Evento | Direção | Payload | Efeito |
 | --- | --- | --- | --- |
-| `ELEICAO` | peer → nó | `number[]` portas | `startElection(data)` |
-| `COORDENADOR` | peer → nó | `{ coordinator: string, processList?: number[] }` | Após 15s: define líder, `setupCoordinatorServer` ou `setupRegularNodeServer` |
-| `reconnect` | peer → nó | `{ port: number }` | `reconnect(port)` atualiza `ipList` |
-| `Disconnect` | peer → nó | (vazio) | `removeCoordinator`, espera 80s, `connectToRing` |
-| `log_request` | cliente → coordenador | ver [appendix](appendix_eventos_payloads.md) | `addToQueue` **se** handler registrado |
+| `election_round` | peer → nó | `number[]` | `startElection` |
+| `coordinator_announce` | peer → nó | `{ coordinatorPort, epoch, processList? }` | Define líder; repassa ao sucessor |
+| `reconnect` | peer → nó | `{ port, host? }` | Atualiza topologia |
+| `coordinator_suspect` | cliente → coordenador | — | Coordenador abdica e reintegra anel |
+| `transaction_request` | cliente → coordenador | ver appendix / simulação | Enfileira transação |
+| `log_request` | cliente → coordenador | ver appendix | `addToQueue` |
 
-## Eventos cliente → coordenador (nó regular)
+## Eventos cliente → coordenador
 
-| Evento | Payload | Resposta |
-| --- | --- | --- |
-| `log_request` | `{ type, hostname, timestamp, requestId }` | `log_response-{requestId}` |
-| `Disconnect` | — | Disparado localmente após timeout de resposta |
+| Evento | Resposta |
+| --- | --- |
+| `transaction_request` | `transaction_response-{requestId}` |
+| `log_request` | `transaction_response-{requestId}` |
+| `coordinator_suspect` | (nó regular após timeout) |
 
-## Registro de `log_request` (importante)
+## log_request
 
-Dentro de `io.on("connection")`:
+Registrado em **toda** conexão quando o nó é coordenador (`registerCoordinatorHandlers`), incluindo conexões já abertas ao assumir o papel (`registerCoordinatorHandlersOnAllSockets`).
 
-```javascript
-if (this.isCoordinator && !this.inElection) {
-  socket.on("log_request", ...);
-}
-```
-
-O handler só é ligado para conexões que chegam **quando o nó já é coordenador**. Conexões estabelecidas antes da eleição ou após mudança de papel podem ficar sem handler — lacuna documentada em [engineering_backlog.md](engineering_backlog.md).
-
-## Eventos emitidos pelo nó
+## Eventos emitidos
 
 | Emissor | Evento | Destino |
 | --- | --- | --- |
-| Qualquer | `ELEICAO` | Sucessor |
-| Iniciador da rodada | `COORDENADOR` | Sucessor + outros IPs (exceto sucessor) |
-| Nó retornando | `reconnect` | Todos os outros em `connectToRing` |
-| Cliente em timeout | `Disconnect` | Socket do coordenador |
+| Participante | `election_round` | Sucessor |
+| Iniciador da rodada | `coordinator_announce` | Sucessor (anel) |
+| Retorno ao anel | `reconnect` | Pares em `connectToRing` |
 
 ## CORS
 
-Socket.IO configurado com `origin: "*"` (adequado ao lab; não usar em produção).
+`origin: "*"` — apenas para o lab.
 
-Payloads exemplificados: [appendix_eventos_payloads.md](appendix_eventos_payloads.md).
+Payloads: [appendix_eventos_payloads.md](appendix_eventos_payloads.md).

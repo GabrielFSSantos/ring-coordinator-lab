@@ -1,4 +1,2 @@
-CREATE TABLE log_entries (
-    hostname VARCHAR(255),
-    timestamp VARCHAR(255)
-);
+-- Legado: use schema.sql (SQLite). Mantido como ponte para docs antigas.
+-- Ver schema.sql na raiz do repositório.

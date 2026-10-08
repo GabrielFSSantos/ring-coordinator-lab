@@ -1,128 +1,193 @@
+# Local: docker compose --profile local --env-file lab.env up --build
+# LAN:   docker compose --profile storage|nodes --env-file lab.env up --build
+# Remova órfãos antigos (postgres/pgadmin): --remove-orphans
+
+x-node-common: &node-common
+  build:
+    context: .
+    dockerfile: src/Dockerfile
+  env_file:
+    - lab.env
+  environment:
+    USE_STORAGE_HTTP: "true"
+    SIM_MODE: manual
+    LOG_STDOUT_MODE: "off"
+    SIM_TX_BURST: "1"
+  depends_on:
+    - storage
+  networks:
+    app_network: {}
+
 services:
-  ubuntu-node-2:
+  storage:
+    profiles: ["local"]
     build:
-      context: ./src
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/Dockerfile
+    container_name: ring-storage
+    command: ["node", "storage/bootstrap/main.js"]
+    env_file:
+      - lab.env
+    environment:
+      LAB_HOST_NAME: storage-primary
+      ADVERTISE_HOST: 172.25.0.10
+      STORAGE_MODE: primary
+      STORAGE_HTTP_PORT: 4000
+      DATABASE_PATH: /data/ledger.db
+      LEDGER_SCHEMA_PATH: /app/schema-ledger.sql
+      LOG_STDOUT_MODE: "off"
+      STORAGE_URL: http://172.25.0.10:4000
+    volumes:
+      - ./data:/data
+    networks:
+      app_network:
+        ipv4_address: 172.25.0.10
+    ports:
+      - "${STORAGE_HTTP_PORT:-4000}:4000"
+
+  ubuntu-node-2:
+    profiles: ["local"]
+    <<: *node-common
     container_name: ubuntu-node-2
     environment:
       HOSTNAME: ubuntu-node-2
-      IP_LIST: "172.25.0.2,172.25.0.3,172.25.0.4,172.25.0.5"
       IP_LOCAL: 172.25.0.2
+      ADVERTISE_HOST: 172.25.0.2
       NODE_PORT: 3002
-    depends_on:
-      postgres:
-        condition: service_healthy
-      dbadmin:
-        condition: service_started
+      NODE_HTTP_PORT: 4002
+      SIM_TX_INTERVAL_MS: "10000"
+      USE_STORAGE_HTTP: "true"
     networks:
       app_network:
         ipv4_address: 172.25.0.2
     ports:
       - "3002:3002"
+      - "4002:4002"
 
   ubuntu-node-3:
-    build:
-      context: ./src
-      dockerfile: Dockerfile
+    profiles: ["local"]
+    <<: *node-common
     container_name: ubuntu-node-3
     environment:
       HOSTNAME: ubuntu-node-3
-      IP_LIST: "172.25.0.2,172.25.0.3,172.25.0.4,172.25.0.5"
       IP_LOCAL: 172.25.0.3
+      ADVERTISE_HOST: 172.25.0.3
       NODE_PORT: 3003
-    depends_on:
-      postgres:
-        condition: service_healthy
-      dbadmin:
-        condition: service_started
+      NODE_HTTP_PORT: 4003
+      SIM_TX_INTERVAL_MS: "5000"
+      USE_STORAGE_HTTP: "true"
     networks:
       app_network:
         ipv4_address: 172.25.0.3
     ports:
       - "3003:3003"
+      - "4003:4003"
 
   ubuntu-node-4:
-    build:
-      context: ./src
-      dockerfile: Dockerfile
+    profiles: ["local"]
+    <<: *node-common
     container_name: ubuntu-node-4
     environment:
       HOSTNAME: ubuntu-node-4
-      IP_LIST: "172.25.0.2,172.25.0.3,172.25.0.4,172.25.0.5"
       IP_LOCAL: 172.25.0.4
+      ADVERTISE_HOST: 172.25.0.4
       NODE_PORT: 3004
-    depends_on:
-      postgres:
-        condition: service_healthy
-      dbadmin:
-        condition: service_started
+      NODE_HTTP_PORT: 4004
+      SIM_TX_INTERVAL_MS: "8000"
+      USE_STORAGE_HTTP: "true"
     networks:
       app_network:
         ipv4_address: 172.25.0.4
     ports:
       - "3004:3004"
+      - "4004:4004"
 
   ubuntu-node-5:
-    build:
-      context: ./src
-      dockerfile: Dockerfile
+    profiles: ["local"]
+    <<: *node-common
     container_name: ubuntu-node-5
     environment:
       HOSTNAME: ubuntu-node-5
-      IP_LIST: "172.25.0.2,172.25.0.3,172.25.0.4,172.25.0.5"
       IP_LOCAL: 172.25.0.5
+      ADVERTISE_HOST: 172.25.0.5
       NODE_PORT: 3005
-    depends_on:
-      postgres:
-        condition: service_healthy
-      dbadmin:
-        condition: service_started
+      NODE_HTTP_PORT: 4005
+      SIM_TX_INTERVAL_MS: "7000"
+      USE_STORAGE_HTTP: "true"
     networks:
       app_network:
         ipv4_address: 172.25.0.5
     ports:
       - "3005:3005"
-  
-  postgres:
-    image: postgres:16
-    container_name: postgres
-    volumes:
-      - db_data:/var/lib/postgresql/data
-      - ./tabela.sql:/docker-entrypoint-initdb.d/01-tabela.sql:ro
-    environment:
-      POSTGRES_DB: distributed_systems_db
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-    ports:
-      - "5432:5432"
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.6
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d distributed_systems_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "4005:4005"
 
-  dbadmin:
-    image: dpage/pgadmin4
-    restart: always
-    container_name: pgadmin4
-    ports:
-      - 5050:80
+  lab-tail:
+    profiles: ["local"]
+    attach: false
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    container_name: lab-tail
+    command: ["node", "log-viewer/bootstrap/main.js"]
+    env_file:
+      - lab.env
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: pgadmin4
+      LAB_HOST_NAME: lab-tail
+      HOSTNAME: lab-tail
+      LOG_STDOUT_MODE: timeline_all
+      STORAGE_URL: http://172.25.0.10:4000
+      LOG_TIMELINE_PERSIST: "true"
     depends_on:
-      - postgres
+      - storage
     networks:
       app_network:
-        ipv4_address: 172.25.0.7
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready u 172.25.0.2 -p 5432 -U user"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+        ipv4_address: 172.25.0.20
+
+  # LAN: --profile storage | nodes | storage+nodes  (ver lab.env.example)
+  lan-storage:
+    profiles: ["storage"]
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    command: ["node", "storage/bootstrap/main.js"]
+    env_file:
+      - lab.env
+    environment:
+      STORAGE_MODE: primary
+    network_mode: host
+    volumes:
+      - ./data:/data
+
+  lan-tail:
+    profiles: ["storage"]
+    attach: false
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    container_name: lan-tail
+    command: ["node", "log-viewer/bootstrap/main.js"]
+    env_file:
+      - lab.env
+    environment:
+      HOSTNAME: lab-tail
+      LAB_HOST_NAME: lab-tail
+      LOG_STDOUT_MODE: timeline_all
+      LOG_TIMELINE_PERSIST: "true"
+    depends_on:
+      - lan-storage
+    network_mode: host
+
+  lan-node:
+    profiles: ["nodes"]
+    build:
+      context: .
+      dockerfile: src/Dockerfile
+    command: ["node", "server/bootstrap/main.js"]
+    env_file:
+      - lab.env
+    environment:
+      USE_STORAGE_HTTP: "true"
+    network_mode: host
 
 networks:
   app_network:
@@ -130,6 +195,3 @@ networks:
     ipam:
       config:
         - subnet: 172.25.0.0/16
-
-volumes:
-  db_data:

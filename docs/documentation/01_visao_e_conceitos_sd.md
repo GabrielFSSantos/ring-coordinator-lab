@@ -21,7 +21,7 @@ flowchart LR
     N5[ubuntu-node-5]
   end
   N2 --- N3 --- N4 --- N5
-  N2 -.->|anel logico ELEICAO| N3
+  N2 -.->|anel logico election_round| N3
   COORD[Coordenador eleito]
   N3 -->|log_request| COORD
   N4 -->|log_request| COORD
@@ -39,7 +39,7 @@ flowchart LR
 | --- | --- |
 | **Processo / nó** | Container `ubuntu-node-x` executando `DistributedNode` |
 | **Identificador** | `NODE_PORT` (3002–3005); maior porta → preferência de líder entre participantes da eleição |
-| **Anel lógico** | Cada nó encaminha `ELEICAO` ao **sucessor** (próximo IP/porta na ordem, com wrap) |
+| **Anel lógico** | Cada nó encaminha `election_round` ao **sucessor** (próximo IP/porta na ordem, com wrap) |
 | **Coordenador / líder** | Nó com `isCoordinator === true`; único que aceita `log_request` e grava no banco |
 | **Exclusão mútua centralizada** | Clientes pedem ao coordenador; ele processa **um** `INSERT` por vez (fila + flag) |
 | **Detecção de falha (simplificada)** | Cliente espera `log_response-{requestId}` por 10s; se expirar, emite `Disconnect` e nova eleição |
@@ -69,6 +69,6 @@ Leitura: [16_fundamentacao_bibliografica.md](16_fundamentacao_bibliografica.md),
 | Caminho | Papel |
 | --- | --- |
 | `docker-compose.yml` | Topologia e variáveis por nó |
-| `src/server/DistribuitedNode.js` | Lógica distribuída |
+| `src/server/application/NodeApplication.js` | Lógica distribuída |
 | `src/server/main.js` | Entrada do processo |
 | `tabela.sql` | DDL inicial |

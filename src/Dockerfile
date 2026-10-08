@@ -1,36 +1,21 @@
-# Use a imagem oficial do Ubuntu como base
-FROM ubuntu:latest
+FROM node:20-bookworm-slim
 
-# Atualize os repositórios e instale as ferramentas necessárias
-RUN apt-get update && apt-get install -y \
-    curl \
-    software-properties-common \
-    iproute2 \
-    net-tools \
-    iputils-ping \
-    systemd \
-    nano \
-    openssh-server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 
-# Adicione o repositório do Node.js e instale o Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
-
-# Defina o diretório de trabalho para /app
 WORKDIR /app
 
-# Copie os arquivos de definição de pacote do Node.js e instale as dependências
-COPY package.json package-lock.json ./
-RUN npm install
+COPY src/package.json src/package-lock.json ./
+RUN npm ci --omit=dev
 
-# Copie o restante dos arquivos do projeto para o diretório /app/api
-COPY server ./server
+COPY schema.sql /app/schema.sql
+COPY schema-ledger.sql /app/schema-ledger.sql
+COPY src/shared ./shared
+COPY src/server ./server
+COPY src/storage ./storage
+COPY src/log-viewer ./log-viewer
 
-# Exponha as portas para a API, consumidores, eleição e SSH
-EXPOSE 3000 4000 22
+EXPOSE 3000 4000
 
-# Iniciar o serviço OpenSSH
-RUN service ssh start
-
-# Comando para manter o contêiner rodando sem executar um processo
-CMD ["node", "server/main.js"]
+CMD ["node", "server/bootstrap/main.js"]

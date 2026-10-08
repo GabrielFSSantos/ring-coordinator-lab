@@ -1,70 +1,43 @@
 # 10 Falhas e recuperação
 
-O lab modela falhas de forma **simplificada**, baseada em timeouts de aplicação e eventos explícitos — não há detector de falha distribuído clássico (heartbeats entre todos os pares).
+Timeouts de aplicação e eventos explícitos — sem detector de falha distribuído completo.
 
-## Timeout de resposta ao coordenador (10s)
+## Timeout de resposta ao coordenador
 
-Em `initiateRandomRequests`:
+Config: `TIMEOUT_LIMIT` (default 10s) em `config/env.js`.
 
-1. Nó regular emite `log_request` com `requestId` único.
-2. Registra `once` em `log_response-{requestId}`.
-3. Se **10s** sem resposta: marca `tookTimeout = true`, remove listener.
+1. Nó regular emite `log_request` com `requestId`.
+2. `once` em `log_response-{requestId}`.
+3. Sem resposta no prazo: marca suspeita e, no próximo tick do intervalo de requisições, emite `coordinator_suspect` no socket do coordenador e agenda nova eleição (debounce 500 ms).
 
-No próximo tick do `setInterval` (base **15s**):
+## coordinator_suspect no coordenador
 
-- Emite `Disconnect` no socket do coordenador.
-- Define `inElection = true` e chama `startElection([])`.
+Recebido apenas se `isCoordinator`:
 
-**Efeito esperado:** coordenador (e outros que ouvem `Disconnect`) executam `removeCoordinator`, pausam longamente e tentam `connectToRing`.
+1. `removeCoordinator()`
+2. `connectToRing()` (anuncia `reconnect`)
+3. Debounce → `startElection([])` se necessário
 
-## Handler Disconnect no servidor
-
-Qualquer conexão que envia `Disconnect`:
-
-1. Tenta `socket.off("log_request", ...)` (referência de função não coincide com o handler registrado — remoção ineficaz).
-2. `removeCoordinator()` — limpa papel de líder, fila se coordenador.
-3. Espera **80 segundos**.
-4. `connectToRing()` — visita outros nós e emite `reconnect`.
+Sem espera de 80 segundos.
 
 ## Reconexão de nó ausente
 
-`reconnect({ port })`:
-
-- Reconstrói IP `172.25.0.{port % 3000}` e reinsere na `ipList`.
-- Se `this.port + 1 == portSee`, sucessor pode reemitir `COORDENADOR`.
+`reconnect({ port })` — reconstrói IP `172.25.0.{port % 3000}` e reinsere na topologia.
 
 ## Falha de conexão entre nós
 
-`electSuccessor` pode entrar em **recursão infinita** se nenhum peer aceitar conexão — cenário de cluster totalmente isolado.
-
-`connecToNode` não valida `connected` após 3s — falso positivo de “socket pronto”.
+`connectPeer` (Socket.IO) com timeout, `connect_error` e retries limitados — sem recursão infinita em `electSuccessor`.
 
 ## Cenários didáticos
 
-| Ação | Comando / método | Resultado esperado (happy path) |
-| --- | --- | --- |
-| Parar coordenador | `docker stop ubuntu-node-5` | Timeouts nos clientes, nova eleição; novo líder provável 3004 |
-| Parar Postgres | `docker stop postgres` | INSERT falha; respostas `Failure`; sistema não recupera DB sozinho |
-| Reiniciar nó | `docker start ubuntu-node-3` | `reconnect` pode repopular `ipList` |
+| Ação | Resultado esperado (happy path) |
+| --- | --- |
+| Parar coordenador | `docker stop ubuntu-node-5` → timeouts, nova eleição em segundos |
+| Reiniciar nó | `docker start …` → `reconnect` repopula topologia |
 
 ## Cenários frágeis
 
-- Partição de rede: dois grupos podem eleger líderes diferentes (sem consenso).
-- Múltiplas eleições simultâneas no boot.
-- Delays 15s / 80s atrasam recuperação visível.
+- Partição de rede: possível split-brain.
+- Múltiplas eleições no boot mitigadas por iniciador único (menor porta).
 
-Invariantes: [12_invariantes_e_limites.md](12_invariantes_e_limites.md). Teoria: [references/notas/detecao_de_falhas.md](../references/notas/detecao_de_falhas.md).
-
-## Fundamentação bibliográfica
-
-Garcia-Molina (`garcia1982elections`) define **eleição após falha** com asserções de correção em ambientes restritos. O lab aproxima isso com **timeout de aplicação** (10s) e evento `Disconnect`, sem prova formal.
-
-| Garcia 1982 (ideia) | Lab | Gap |
-| --- | --- | --- |
-| Reconfigurar após falha | Nova `startElection` | Sleeps 80s/15s (**B5**) |
-| Coordenador único acordado | `COORDENADOR` | Partição não tratada |
-| Bully / asserções | Timeout cliente | Não é bully completo |
-
-Raft (`ongaro2014raft`, `mit6824raftnotes`) é **contraste**: eleição por maioria e termos — não implementado.
-
-Nota: [garcia1982_bully.md](../references/notas/garcia1982_bully.md).
+Invariantes: [12_invariantes_e_limites.md](12_invariantes_e_limites.md).

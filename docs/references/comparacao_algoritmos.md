@@ -6,7 +6,7 @@ Posicionamento do **Ring Coordinator Lab** com **citações BibTeX**. Notas: [RE
 
 | Aspecto | Chang–Roberts (anel) | Este lab |
 | --- | --- | --- |
-| Mensagem | Carrega maior ID visto | Carrega **lista** de portas (`ELEICAO`) |
+| Mensagem | Carrega maior ID visto | Carrega **lista** de portas (`election_round`) |
 | Participação | Extinção seletiva de IDs menores | Vários ramos em `startElection`; reinício se `electionList[0] < this.port` |
 | Líder | Maior ID na mensagem final | `Math.max(...electionList)` quando volta ao iniciador |
 | Complexidade | O(n log n) médio (artigo) | Não otimizado; cluster n=4 |

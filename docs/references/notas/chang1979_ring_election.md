@@ -12,14 +12,14 @@ Processos em anel unidirecional elegem o extremo (maior ou menor ID) sem control
 
 - **Anel lógico** com sucessor fixo (`electSuccessor`).
 - **Critério de maior ID** entre participantes (`Math.max(...electionList)`).
-- **Circulação de mensagens** de eleição (`ELEICAO`).
+- **Circulação de mensagens** de eleição (`election_round`).
 
 ## Diferença no nosso caso
 
 - Mensagem carrega **lista de portas**, não só o maior ID visto (variante próxima a Le Lann O(n²)).
 - Ramo que **reinicia** a lista quando `electionList[0] < this.port` (influência de bully, não está no artigo).
 - Transporte **Socket.IO** assíncrono; artigo assume canal FIFO confiável entre vizinhos.
-- Propagação do líder via `COORDENADOR` com atraso fixo de 15s.
+- Propagação do líder via `coordinator_announce` com atraso fixo de 15s.
 
 ## Código e documentação
 

@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS log_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  hostname TEXT NOT NULL,
+  timestamp_ms INTEGER NOT NULL,
+  request_id TEXT UNIQUE
+);

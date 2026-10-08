@@ -7,7 +7,7 @@ Termos usados na documentação e na defesa do TP.
 | **Processo** | Programa com estado próprio executando em um nó | Container `ubuntu-node-x` |
 | **Mensagem** | Comunicação assíncrona entre processos | Eventos Socket.IO |
 | **Líder / coordenador** | Processo com papel especial acordado | `isCoordinator`, grava no DB |
-| **Eleição de líder** | Protocolo para escolher o coordenador | `ELEICAO` / `COORDENADOR` |
+| **Eleição de líder** | Protocolo para escolher o coordenador | `election_round` / `coordinator_announce` |
 | **Anel lógico** | Topologia em que cada processo tem um sucessor | `electSuccessor` |
 | **Exclusão mútua** | Apenas um processo na seção crítica | Fila no coordenador |
 | **Mutex centralizado** | Árbitro único concede acesso | `log_request` → fila → `INSERT` |

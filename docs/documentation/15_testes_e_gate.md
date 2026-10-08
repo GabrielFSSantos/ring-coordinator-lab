@@ -1,39 +1,23 @@
 # 15 Testes e gate
 
-## Gate mínimo (meta-workspace)
+## Gate (meta-workspace)
 
-Script: `harness/checks/run-gate.sh` (fora deste repo, no meta-workspace do Ring Coordinator Lab).
+Script: `harness/checks/run-gate.sh`
 
-Executa:
-
-1. `docker compose config` (se `docker` no PATH)
+1. `docker compose config`
 2. `npm ci` em `src/`
-3. `npm test` — **opcional**; falha documentada não falha o gate
+3. `npm test` (obrigatório)
 
-## Estado atual do Jest
+## Suíte Jest
 
-Arquivo: [`src/server/DistribuitedNode.test.js`](../../src/server/DistribuitedNode.test.js)
+Pasta: [`src/server/__tests__/`](../../src/server/__tests__/)
 
-Problemas conhecidos:
-
-| Problema | Detalhe |
+| Arquivo | Escopo |
 | --- | --- |
-| Import | `require("./DistributedNode")` — arquivo real é `DistribuitedNode.js` |
-| API | Testes esperam `hostId`, `processId`, `listPorts`, `successorIp` no construtor |
-| Assertions | Uso incorreto de `expected(node.hostId).toBe(...)` |
-
-**Conclusão:** `npm test` não valida o comportamento distribuído atual. O README e este doc refletem isso.
-
-## Plano de testes sugerido (futuro)
-
-| Camada | Escopo | Ferramenta |
-| --- | --- | --- |
-| Unit | `ipsToObjectSorted`, `getClientPort`, ramos de `startElection` com mocks | Jest |
-| Unit | Fila: ordem FIFO, `queueLimit`, `isProcessing` | Jest |
-| Integração | Compose: 4 nós + assert em `log_entries` após N segundos | script shell / testcontainers |
-| Contrato | Payloads `log_request` / `log_response` | snapshot ou schema |
-
-Prioridade: corrigir import e um teste mínimo de env (`HOSTNAME`, `port` a partir de `NODE_PORT`).
+| `RingTopology.test.js` | Sucessor, min port, reconexão |
+| `ElectionService.test.js` | Regras de participação e `max` líder |
+| `RequestQueue.test.js` | FIFO e `queue_full` |
+| `SqliteLogRepository.test.js` | INSERT + RETURNING |
 
 ## Comandos locais
 
@@ -43,6 +27,4 @@ npm ci
 npm test
 ```
 
-## Documentação e gate
-
-Ao adicionar testes, atualizar matriz em [13_guia_dev_e_agente.md](13_guia_dev_e_agente.md) e considerar exigir `npm test` no `run-gate.sh` quando a suíte estiver verde.
+Integração Docker (smoke manual): ver [00_quickstart.md](00_quickstart.md).

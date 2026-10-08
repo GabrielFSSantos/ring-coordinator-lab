@@ -1,59 +1,55 @@
 # Ring Coordinator Lab
 
-Simulação em Docker de **eleição de coordenador em anel** e **exclusão mútua centralizada** sobre um recurso compartilhado (persistência em PostgreSQL).
+Simulação de **eleição em anel**, **mutex centralizado** e **ledger** (saldo compartilhado) com storage HTTP.
 
-Trabalho prático de sistemas distribuídos: a rede mantém um líder; se um nó falha, outro é eleito. Nós regulares solicitam acesso ao recurso de forma aleatória; o coordenador serializa as gravações.
+## Documentação
 
-## Documentação completa
+- [docs/README.md](docs/README.md)
+- [Simulação LAN + ledger](docs/documentation/17_simulacao_lan_ledger.md)
+- [Dois PCs em casa (8 nós)](docs/documentation/18_lan_dois_pcs_casa.md)
+- Variáveis: [lab.env.example](lab.env.example)
 
-Índice, fluxos, contratos Socket.IO, referências acadêmicas e guia para desenvolvedores/agentes: **[`docs/README.md`](docs/README.md)**.
+## Um `lab.env` para todos
 
-Entrada rápida: [`docs/documentation/00_quickstart.md`](docs/documentation/00_quickstart.md) · [`docs/documentation/11_fluxo_ponta_a_ponta.md`](docs/documentation/11_fluxo_ponta_a_ponta.md).
+1. `cp lab.env.example lab.env`
+2. Em LAN: todos usam o **mesmo** `STORAGE_URL` (IP do PC do banco, passado no slide/chat).
+3. Cada pessoa ajusta só: `ADVERTISE_HOST`, `LAB_HOST_NAME`, `ADVERTISE_PORT_BASE`, `NODE_COUNT`.
 
-Bibliografia (PDFs locais): [`docs/references/README.md`](docs/references/README.md).
+| Modo | Comando |
+| --- | --- |
+| **Docker local** (4 nós + banco) | `docker compose --profile local --env-file lab.env up --build` ou `./scripts/lan-up.sh local` |
+| **LAN — só banco** | `docker compose --profile storage --env-file lab.env up --build` |
+| **LAN — só nós** | `docker compose --profile nodes --env-file lab.env up --build` |
+| **LAN — banco + nós** | `docker compose --profile storage --profile nodes --env-file lab.env up --build` |
+| **npm (sem Docker)** | `cd src && npm run storage` (banco) · `npm run server` (nó) |
 
-## Requisitos
+Docker local: `lab.env` na raiz já aponta para `172.25.0.10` e `DISCOVERY_MODE=off`.
 
-- Docker e Docker Compose
-- Node.js 20+ (apenas para testes locais em `src/`)
+- Nós: portas `3002`–`3005`
+- Storage: `http://localhost:4000` · `GET /v1/balance`
+- Dados: `data/ledger.db` (com `LEDGER_RESET_ON_START=true`, cada boot do storage zera timeline e saldo inicial)
 
-## Subir o ambiente
+## Ver o lab no terminal
 
-```bash
-cd ~/GitHub/ring-coordinator-lab
-docker compose up --build
-```
-
-Serviços:
-
-| Serviço | Host | Função |
-| --- | --- | --- |
-| `ubuntu-node-2` … `5` | portas `3002`–`3005` | Nós distribuídos (Socket.IO) |
-| `postgres` | `localhost:5432` | Banco `distributed_systems_db` |
-| `dbadmin` (pgAdmin) | `localhost:5050` | UI (`admin@admin.com` / `pgadmin4`) |
-
-Schema inicial: [`tabela.sql`](tabela.sql) (`log_entries`: `hostname`, `timestamp`).
-
-## Variáveis por nó (compose)
-
-Cada nó define:
-
-- `HOSTNAME` — nome do container
-- `IP_LOCAL` — IP na rede `172.25.0.0/16`
-- `NODE_PORT` — porta do servidor (último octeto do IP + 3000)
-- `IP_LIST` — lista CSV de IPs de todos os nós
-
-## Código principal
-
-- Entrada: [`src/server/main.js`](src/server/main.js)
-- Lógica: [`src/server/DistribuitedNode.js`](src/server/DistribuitedNode.js) (classe `DistributedNode`)
-
-## Testes (local)
+No **Docker local**, `compose up` mostra só linhas **`[lab-ops]`** (subida/erro por container). O **`lab-tail`** roda em segundo plano (`attach: false`) e não repete a narrativa no mesmo terminal.
 
 ```bash
-cd src
-npm ci
-npm test
+docker compose --profile local --env-file lab.env up --build   # ops + status Docker
+docker compose --profile local logs -f lab-tail                 # narrativa global (PC · nó · papel)
 ```
 
-Os testes Jest podem estar desatualizados em relação à implementação atual; o gate mínimo valida `docker compose config` e `npm ci`.
+Defina `LAB_HOST_NAME` no `lab.env` de cada PC para distinguir máquinas na LAN.
+
+Sem Docker: `cd src && npm run tail` (com `STORAGE_URL` e `LOG_STDOUT_MODE=timeline_all` no `lab.env`).
+
+Ajustes visuais: `LOG_STYLE=box`, `LOG_DETAIL=false`, `LOG_TX_STORY=true`. Detalhes: [docs/documentation/19_convencoes_codigo_e_logs.md](docs/documentation/19_convencoes_codigo_e_logs.md).
+
+Carga simulada orgânica: **1 tx por ciclo** por nó, intervalos distintos no compose (10 s / 5 s / 8 s / 7 s) — melhor leitura no `lab-tail`. Ajuste em runtime: `PATCH /v1/simulation` com `txIntervalSec`.
+
+## Testes
+
+```bash
+cd src && npm ci && npm test
+```
+
+Gate: `~/GitHub/Workspaces/ring-coordinator-lab/harness/checks/run-gate.sh`

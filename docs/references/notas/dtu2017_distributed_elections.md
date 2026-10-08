@@ -10,17 +10,17 @@ Descreve eleição em anel (Chang–Roberts): participação, comparação de ID
 
 ## O que tomamos no lab
 
-- Propagação de identidade do líder após eleição (`COORDENADOR` com IP).
+- Propagação de identidade do líder após eleição (`coordinator_announce` com IP).
 - Critério “maior identificador” entre processos vivos na rodada.
 
 ## Diferença no nosso caso
 
-- Evento `COORDENADOR` com espera de 15s; não há estado `non-participant` explícito como nos slides.
+- Evento `coordinator_announce` com espera de 15s; não há estado `non-participant` explícito como nos slides.
 - Múltiplas eleições concorrentes no boot.
 
 ## Código
 
-- `startElection` ramo `electionList[0] == this.port` — emissão `COORDENADOR`
+- `startElection` ramo `electionList[0] == this.port` — emissão `coordinator_announce`
 
 ## Próximo passo
 

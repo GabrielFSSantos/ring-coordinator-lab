@@ -1,6 +1,6 @@
 # Apêndice — payloads de eventos
 
-## ELEICAO
+## election_round
 
 ```json
 [3002, 3003, 3004]
@@ -8,11 +8,12 @@
 
 Array de números (`NODE_PORT`) na ordem de participação da rodada.
 
-## COORDENADOR
+## coordinator_announce
 
 ```json
 {
-  "coordinator": "172.25.0.5",
+  "coordinatorPort": 3005,
+  "epoch": 1710000000123,
   "processList": [3002, 3003, 3004, 3005]
 }
 ```
@@ -23,7 +24,32 @@ Array de números (`NODE_PORT`) na ordem de participação da rodada.
 
 ```json
 {
-  "port": 3003
+  "port": 3003,
+  "host": "10.0.0.12"
+}
+```
+
+## transaction_request
+
+Corpo da transação (simulação / cliente): inclui `requestId`, `delta` ou `deltaCents`, identificação do nó, etc.
+
+## transaction_response-{requestId}
+
+Sucesso:
+
+```json
+{
+  "status": "Success",
+  "data": { }
+}
+```
+
+Falha:
+
+```json
+{
+  "status": "Failure",
+  "error": "mensagem"
 }
 ```
 
@@ -35,28 +61,6 @@ Array de números (`NODE_PORT`) na ordem de participação da rodada.
   "hostname": "ubuntu-node-3",
   "timestamp": 1710000000123,
   "requestId": "req-1710000000123-0.123456789"
-}
-```
-
-## log_response-{requestId}
-
-Sucesso:
-
-```json
-{
-  "status": "Success",
-  "data": null
-}
-```
-
-(`data` pode ser `undefined` — `INSERT` sem `RETURNING`.)
-
-Falha:
-
-```json
-{
-  "status": "Failure",
-  "error": "mensagem do PostgreSQL"
 }
 ```
 

@@ -1,6 +1,6 @@
 # 16 Fundamentação bibliográfica
 
-Como ler este repositório como **misto código + teoria** (sem monografia): cada tópico tem implementação em [`DistribuitedNode.js`](../../src/server/DistribuitedNode.js), explicação em `documentation/`, e fontes em [`references/`](../references/README.md).
+Como ler este repositório como **misto código + teoria** (sem monografia): cada tópico tem implementação em [`NodeApplication.js`](../../src/server/application/NodeApplication.js) e módulos em `domain/` / `infrastructure/`, explicação em `documentation/`, e fontes em [`references/`](../references/README.md).
 
 ## Três camadas
 

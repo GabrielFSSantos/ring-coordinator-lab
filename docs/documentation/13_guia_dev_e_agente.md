@@ -52,7 +52,7 @@ cd src && npm ci
 | Fila mutex | [06](06_exclusao_mutua_centralizada.md) | `addToQueue`, `processRequest` | unit fila |
 | Payload log | [appendix_eventos_payloads](appendix_eventos_payloads.md) | `initiateRandomRequests` | contract |
 | IP → porta | [08](08_utilitarios.md) | `IpsToObjectSorted` | unit |
-| INSERT | [09](09_persistencia_postgres.md) | `processRequest` | integração compose |
+| INSERT | [09](09_persistencia_sqlite.md) | `processRequest` | integração compose |
 | Timeout 10s | [10](10_falhas_e_recuperacao.md) | `initiateRandomRequests` | timer mock |
 
 Suite atual: legada — [15_testes_e_gate.md](15_testes_e_gate.md).

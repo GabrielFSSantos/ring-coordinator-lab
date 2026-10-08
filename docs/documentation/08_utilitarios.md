@@ -23,7 +23,7 @@ Extrai IP do handshake Socket.IO (`socket.handshake.address`), com tratamento de
 
 - URL: `http://${ipString}` (adiciona `:3000` se porta omitida).
 - Aguarda 3s e resolve o socket (conectado ou não).
-- Usado para sucessor, coordenador e broadcast de `COORDENADOR` / `reconnect`.
+- Usado para sucessor, coordenador e broadcast de `coordinator_announce` / `reconnect`.
 
 ## PrintEnvironmentVariables.js
 
