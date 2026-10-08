@@ -170,6 +170,8 @@ services:
       - lab.env
     environment:
       STORAGE_MODE: primary
+      DATABASE_PATH: /data/ledger.db
+      LEDGER_SCHEMA_PATH: /app/schema-ledger.sql
     network_mode: host
     volumes:
       - ./data:/data

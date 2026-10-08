@@ -1,5 +1,6 @@
 # Scripts
 
+- `run-on-pc-a.sh` — preset PC1 (Gabriel): banco + 4 nós (`storage`+`nodes`).
 - `run-on-pc-b.sh` — preset PC2 (gfswo): copia `configs/pc2-gfswo.lab.env` e sobe `nodes`+`tail`.
 - `lan-up.sh` — `local` \| `storage` \| `nodes` \| `both` \| `tail`.
 - `lan-tail.sh` — sobe `lan-tail` (profile `tail`) e segue logs; `lan-tail.sh logs` se já estiver rodando.

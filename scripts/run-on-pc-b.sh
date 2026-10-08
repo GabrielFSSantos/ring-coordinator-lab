@@ -17,8 +17,13 @@ if curl -sf "http://${PC_A}:4000/v1/health" >/dev/null; then
   echo "Storage PC1 (${PC_A}:4000) OK"
 else
   echo "AVISO: não alcançou http://${PC_A}:4000/v1/health — suba o PC1 antes (storage na porta 4000)." >&2
-  echo "No PC1 (WSL): docker compose --profile local --env-file lab.env up --build" >&2
-  echo "  ou: cp configs/pc1-gabriel-8nodes.lab.env lab.env && docker compose --profile storage --profile nodes --env-file lab.env up --build" >&2
+  echo "No PC1 (WSL): ./scripts/run-on-pc-a.sh" >&2
+  exit 1
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "ERRO: docker não encontrado no WSL. Ative Docker Desktop → Settings → WSL integration (esta distro)." >&2
+  exit 1
 fi
 
 exec docker compose --profile nodes --profile tail --env-file "$ROOT/lab.env" -f "$ROOT/docker-compose.yml" up --build
