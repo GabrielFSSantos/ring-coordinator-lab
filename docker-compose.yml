@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ubuntu-node-2:
     build:
@@ -86,10 +84,11 @@ services:
       - "3005:3005"
   
   postgres:
-    image: postgres:latest
+    image: postgres:16
     container_name: postgres
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./tabela.sql:/docker-entrypoint-initdb.d/01-tabela.sql:ro
     environment:
       POSTGRES_DB: distributed_systems_db
       POSTGRES_USER: user

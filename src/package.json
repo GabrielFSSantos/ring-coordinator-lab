@@ -1,5 +1,5 @@
 {
-  "name": "node",
+  "name": "ring-coordinator-lab",
   "version": "1.0.0",
   "description": "",
   "main": "server/main.js",

@@ -1,4 +1,6 @@
 {
+  "name": "ring-coordinator-lab",
+  "private": true,
   "dependencies": {
     "pg": "^8.11.3"
   }

@@ -1,2 +1,5 @@
 src/node_modules
 src-clone
+docs/references/pdfs/*.part
+*:Zone.Identifier
+**/*:Zone.Identifier
