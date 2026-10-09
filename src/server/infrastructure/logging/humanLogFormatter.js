@@ -95,7 +95,17 @@ function messageForEvent(eventCode, detail, extra = {}, context = {}) {
     }
     case LogEventCodes.TX_ACK: {
       const ok = kv.status === "Success";
-      const lines = [ok ? "Resposta do coordenador: tudo certo." : `Resposta: ${kv.status || "?"}.`];
+      const accepted = kv.status === "Accepted";
+      let headline = `Resposta: ${kv.status || "?"}.`;
+      if (ok) headline = "Resposta do coordenador: tudo certo.";
+      if (accepted) {
+        headline =
+          "Coordenador aceitou o pedido; o banco está fora (ainda não gravou).";
+      }
+      if (kv.status === "Rejected") {
+        headline = "Resposta: Rejected — vale procurar outro líder no anel.";
+      }
+      const lines = [headline];
       if (logDetail && kv.req) lines.push(`Id: ${kv.req}`);
       return lines;
     }
@@ -139,6 +149,8 @@ function messageForEvent(eventCode, detail, extra = {}, context = {}) {
       return ["Coordenador ativo, mas o banco ainda não responde."];
     case LogEventCodes.STORAGE_DISCARD:
       return ["Movimentação descartada porque o banco está fora."];
+    case LogEventCodes.STORAGE_DEFER:
+      return ["Pedido aceito pelo coordenador; aguardando o banco para gravar."];
     case LogEventCodes.KILL_REJECT:
       return ["Teste de falha do líder não pôde rodar agora."];
     case LogEventCodes.KILL_REQUEST:

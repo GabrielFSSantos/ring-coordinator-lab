@@ -9,10 +9,15 @@ class ElectionService {
     );
   }
 
-  static shouldRestartElection(localPort, electionList, inElection) {
+  /** Nó entra na rodada (lista crescente por porta), sem reiniciar só com a porta local. */
+  static shouldJoinMidRing(localPort, electionList, inElection) {
     if (inElection || electionList.includes(localPort)) return false;
     if (electionList.length === 0) return false;
     return electionList[0] < localPort;
+  }
+
+  static shouldRestartElection(localPort, electionList, inElection) {
+    return ElectionService.shouldJoinMidRing(localPort, electionList, inElection);
   }
 
   static isInitiatorComplete(localPort, electionList) {

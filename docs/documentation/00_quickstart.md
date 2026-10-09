@@ -2,58 +2,26 @@
 
 ## Pré-requisitos
 
-- Docker e Docker Compose
-- Node.js 20+ (opcional, para `npm test` em `src/`)
-- `sqlite3` CLI (opcional, para inspecionar `data/log.db`)
+- Docker e Docker Compose (storage + start) ou Node 20+ (node + logs)
+- `sqlite3` CLI (opcional)
 
-## Subir o ambiente
+## Subir
 
 ```bash
 cd ~/GitHub/ring-coordinator-lab
-docker compose up --build
+./lab storage    # banco (qualquer ordem)
+./lab start      # 4 nós Docker, primeiro plano
+./lab logs       # outro terminal — narrativa
 ```
 
-Aguarde os quatro nós (`ubuntu-node-2` … `ubuntu-node-5`). O nó de menor porta inicia a eleição quando o anel responde.
-
-## Serviços e portas no host
-
-| Serviço | Porta host | Função |
-| --- | --- | --- |
-| `ubuntu-node-2` | 3002 | Nó distribuído |
-| `ubuntu-node-3` | 3003 | Nó distribuído |
-| `ubuntu-node-4` | 3004 | Nó distribuído |
-| `ubuntu-node-5` | 3005 | Nó distribuído |
-
-Persistência: arquivo **`data/log.db`** na raiz do repo (bind mount).
-
-## Verificar que está funcionando
-
-### Logs
-
-```bash
-docker compose logs -f ubuntu-node-5
-```
-
-Procure `Lista de Processos da Eleição`, `Coordenador ativo`, `Gravação` / `Resposta recebida`.
-
-### SQLite no host
-
-```bash
-sqlite3 data/log.db "SELECT * FROM log_entries ORDER BY id DESC LIMIT 20;"
-```
+Nativo um nó: `./lab node`. Quatro processos no host: `./lab start --native`.
 
 ## Parar
 
-```bash
-docker compose down
-```
+Ctrl+C no `./lab start`, depois `./lab down` se precisar limpar containers.
 
-## Testes locais
+## Testes
 
 ```bash
-cd src
-npm ci
-npm test
+cd src && npm ci && npm test
 ```
-
-Próximo: [11_fluxo_ponta_a_ponta.md](11_fluxo_ponta_a_ponta.md).

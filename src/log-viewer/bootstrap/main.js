@@ -20,50 +20,68 @@ if (labEnvPath) {
 require("dotenv").config();
 
 const { loadLogViewerConfig } = require("../config");
+const { discoverStorageUrl } = require("../discoverStorageMdns");
 const { StorageHttpClient } = require("../../server/infrastructure/storage/StorageHttpClient");
 const { TimelineStdoutPoller } = require("../../server/infrastructure/logging/TimelineStdoutPoller");
 const { writeOpsLine } = require("../../server/infrastructure/logging/dockerOpsLog");
 
-const config = loadLogViewerConfig();
-const mode = config.logStdoutMode === "timeline_all"
-  ? "timeline_all"
-  : config.logStdoutMode;
+async function main() {
+  let config = loadLogViewerConfig();
+  const mode =
+    config.logStdoutMode === "timeline_all"
+      ? "timeline_all"
+      : config.logStdoutMode;
 
-if (!config.storageUrl) {
-  console.error("lab-tail: defina STORAGE_URL no lab.env");
-  process.exit(1);
+  if (!config.storageUrl) {
+    const discovered = await discoverStorageUrl();
+    if (discovered) {
+      config = { ...config, storageUrl: discovered };
+    }
+  }
+
+  if (!config.storageUrl) {
+    console.error(
+      "ring-tail: defina STORAGE_URL ou LAB_STORAGE_HOST no lab.env, ou suba o banco (./lab storage)."
+    );
+    process.exit(1);
+  }
+
+  const storageClient = new StorageHttpClient(
+    config.storageUrl,
+    config.storageWriteToken
+  );
+
+  const poller = new TimelineStdoutPoller({
+    storageClient,
+    mode,
+    labHostName: config.labHostName,
+    hostname: config.hostname,
+    port: config.port,
+    logFormat: config.logFormat,
+    logStyle: config.logStyle,
+    pollMs: config.logTimelinePollMs,
+    logTimelinePersist: config.logTimelinePersist,
+  });
+
+  poller.start();
+
+  writeOpsLine(config.logDockerOps, {
+    labHostName: config.labHostName,
+    service: "ring-tail",
+    message: `seguindo timeline (${config.storageUrl}) — ./lab logs`,
+  });
+
+  process.on("SIGINT", () => {
+    poller.stop();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    poller.stop();
+    process.exit(0);
+  });
 }
 
-const storageClient = new StorageHttpClient(
-  config.storageUrl,
-  config.storageWriteToken
-);
-
-const poller = new TimelineStdoutPoller({
-  storageClient,
-  mode,
-  labHostName: config.labHostName,
-  hostname: config.hostname,
-  port: config.port,
-  logFormat: config.logFormat,
-  logStyle: config.logStyle,
-  pollMs: config.logTimelinePollMs,
-  logTimelinePersist: config.logTimelinePersist,
-});
-
-poller.start();
-
-writeOpsLine(config.logDockerOps, {
-  labHostName: config.labHostName,
-  service: "lab-tail",
-  message: `seguindo timeline (${config.storageUrl}) — logs: docker compose logs -f lab-tail ou lan-tail; ou npm run tail`,
-});
-
-process.on("SIGINT", () => {
-  poller.stop();
-  process.exit(0);
-});
-process.on("SIGTERM", () => {
-  poller.stop();
-  process.exit(0);
+main().catch((err) => {
+  console.error(err.message || err);
+  process.exit(1);
 });

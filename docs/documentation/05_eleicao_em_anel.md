@@ -16,11 +16,23 @@ Classe `RingTopology`: ordem por porta derivada do IP; sucessor = primeira porta
 - **Payload:** array de portas (`electionList`).
 - Regras em `ElectionService` + `NodeApplication.startElection` (mesma variante: lista + `max(port)` como líder — ver DR-003).
 
+## Travessia do anel (`ringRelay`)
+
+Cada nó mantém a lista ordenada de peers (`RingTopology.portsInOrder`, mDNS/`mergeDiscoveredPeers`). Para **enviar** `election_round`, `coordinator_announce` ou `coordinator_suspect`, usa `ringPortsAfterLocal()` e tenta conectar porta a porta até o primeiro peer vivo (`emitAlongRing` / `connectAlongRing`). Se o sucessor lógico não responde, o token **pula** para o próximo da lista sem remover o peer do mapa (ele pode estar em recuperação).
+
+## Ex-líder em recuperação (`ringJoinDeferred`)
+
+Após renúncia/kill simulado, o ex-coordenador **não participa** da eleição nem mantém link de sucessor, mas **repassa** mensagens de controle recebidas (modo relay). Ao aplicar `coordinator_announce` de outro nó (`COORDINATOR_APPLY`), volta ao anel como participante sem nova eleição.
+
 ## Mensagem `coordinator_announce`
 
 - **Payload:** `{ coordinatorPort: number, epoch: number, processList?: number[] }`
 - Aplicado **imediatamente**; `epoch` ignora mensagens antigas.
-- Propagação pelo anel via sucessor (cada nó repassa após aplicar).
+- Propagação pelo anel via `emitAlongRing` (cada nó repassa após aplicar).
+
+## Join tardio sem resetar líder
+
+Após `reconnect` ou merge mDNS, o nó consulta `GET /v1/cluster/state` nos peers (`syncClusterStateFromPeers`) e aplica líder com `epoch` maior antes de agendar eleição.
 
 ## Boot
 

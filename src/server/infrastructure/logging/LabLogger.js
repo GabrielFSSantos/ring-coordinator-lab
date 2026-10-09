@@ -111,7 +111,9 @@ class LabLogger {
         ? LogEventCodes.STORAGE_WARN
         : event === "DISCARD"
           ? LogEventCodes.STORAGE_DISCARD
-          : event === "UP"
+          : event === "DEFER"
+            ? LogEventCodes.STORAGE_DEFER
+            : event === "UP"
             ? LogEventCodes.STORAGE_UP
             : event === "DOWN"
               ? LogEventCodes.STORAGE_DOWN

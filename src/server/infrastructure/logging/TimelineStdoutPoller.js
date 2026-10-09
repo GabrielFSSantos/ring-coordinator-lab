@@ -58,6 +58,7 @@ class TimelineStdoutPoller {
     this.warnedNoPersist = options.warnedNoPersist === true;
     this.logTimelinePersist = options.logTimelinePersist !== false;
     this._tickInFlight = false;
+    this._fetchFailLogged = false;
   }
 
   start() {
@@ -97,8 +98,18 @@ class TimelineStdoutPoller {
           afterId: this.afterId,
           limit: 50,
         });
-      } catch {
+      } catch (err) {
+        if (!this._fetchFailLogged) {
+          console.error(
+            `[ring-tail] não conseguiu ler timeline (verifique STORAGE_URL; no PC do banco Docker/WSL use http://127.0.0.1:4000): ${err.message || err}`
+          );
+          this._fetchFailLogged = true;
+        }
         return;
+      }
+      if (this._fetchFailLogged) {
+        console.error("[ring-tail] timeline reconectada ao storage.");
+        this._fetchFailLogged = false;
       }
       if (!Array.isArray(batch) || batch.length === 0) return;
 

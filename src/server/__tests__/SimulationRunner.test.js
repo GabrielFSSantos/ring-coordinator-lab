@@ -20,8 +20,6 @@ describe("SimulationRunner", () => {
         txEnabled: true,
         txIntervalMs: 5000,
         txJitterMs: 0,
-        mode: "manual",
-        killEnabled: false,
       },
       getSimTxBurst: () => 1,
       sendSimulatedTransaction: (i) => sends.push(i),
@@ -48,8 +46,6 @@ describe("SimulationRunner", () => {
         txEnabled: true,
         txIntervalMs: 5000,
         txJitterMs: 0,
-        mode: "manual",
-        killEnabled: false,
       },
       getSimTxBurst: () => 1,
       sendSimulatedTransaction: () => sends.push(1),
@@ -59,6 +55,28 @@ describe("SimulationRunner", () => {
     jest.advanceTimersByTime(5000);
     expect(sends).toHaveLength(0);
     jest.advanceTimersByTime(3000);
+    expect(sends).toHaveLength(1);
+    runner.stop();
+  });
+
+  it("double start does not stack tx timers", () => {
+    const sends = [];
+    const nodeApp = {
+      isCoordinator: false,
+      simulatedDown: false,
+      config: { simTxInitialStaggerMs: 0 },
+      simulationPolicy: {
+        paused: false,
+        txEnabled: true,
+        txIntervalMs: 5000,
+        txJitterMs: 0,
+      },
+      sendSimulatedTransaction: () => sends.push(1),
+    };
+    const runner = new SimulationRunner(nodeApp);
+    runner.start();
+    runner.start();
+    jest.advanceTimersByTime(5000);
     expect(sends).toHaveLength(1);
     runner.stop();
   });

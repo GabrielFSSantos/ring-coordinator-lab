@@ -22,25 +22,16 @@ PC-B: `NODE_COUNT=4`, `ADVERTISE_PORT_BASE=3006`
 
 ## Subir serviços
 
-**PC-A (banco)** — pode manter só o ledger rodando:
+Mesmos containers (`ring-storage`, `ring-node`, `ring-tail`) em todos os PCs:
 
 ```bash
-docker compose --profile storage --env-file lab.env up --build
-# ou: ./scripts/lan-up.sh storage
-# ou: cd src && npm run storage
-```
+# PC-A (banco + 4 nós)
+./scripts/run-on-pc-a.sh
+# ou: ./scripts/lab-up.sh full
 
-**PC-A (banco + nós no mesmo PC):**
-
-```bash
-docker compose --profile storage --profile nodes --env-file lab.env up --build
-```
-
-**PC-B (só nós):**
-
-```bash
-docker compose --profile nodes --env-file lab.env up --build
-# ou: cd src && npm run server   (NODE_COUNT=1 e um NODE_PORT, ou supervisor via compose)
+# PC-B (4 nós + tail)
+./scripts/run-on-pc-b.sh
+# ou: ./scripts/lab-up.sh worker
 ```
 
 ## Fallback `DISCOVERY_MODE=manual`
@@ -68,21 +59,12 @@ curl "http://<IP-BANCO>:4000/v1/ledger?limit=5"
 
 | Onde | Como |
 | --- | --- |
-| PC do banco | `docker compose --profile storage --env-file lab.env up --build` → `logs -f lan-tail` |
-| PC-B (ou outro) | `./scripts/lan-tail.sh` ou `docker compose --profile tail --env-file lab.env up` |
+| Qualquer PC | `docker compose logs -f tail` |
 | Sem Docker | `cd src && npm run tail` |
-
-No PC-B com nós **e** tail: terminal 1 → `--profile nodes`; terminal 2 → `./scripts/lan-tail.sh logs` (ou `npm run tail`). **Não** use `--profile local` na LAN.
 
 Cada linha usa `LAB_HOST_NAME` do nó que gravou o evento (ex.: `pc-sala-a · ubuntu-node-3006 · …`). Defina nomes **únicos** por PC no `lab.env` (`LAB_HOST_NAME=pc-sala-a` vs `pc-sala-b`).
 
-No PC do banco, evite dois `lan-tail` ao mesmo tempo (profile `storage` já sobe um; não rode `--profile tail` em paralelo no mesmo host).
-
-Linhas de containers de nó podem intercalar no `docker compose logs`. Para um processo só:
-
-```bash
-docker compose --profile nodes --env-file lab.env logs -f lan-node
-```
+Logs do processo nó: `docker compose logs -f node`
 
 Com `LOG_FORMAT=human` (padrão), cada evento sai em bloco PT-BR com cabeçalho `LAB_HOST_NAME │ hostname │ :porta`. Ver [19_convencoes_codigo_e_logs.md](19_convencoes_codigo_e_logs.md).
 

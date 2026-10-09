@@ -1,7 +1,11 @@
 const http = require("http");
 const socketIo = require("socket.io");
 const { RingTopology } = require("../domain/ring/RingTopology");
+const ringRelay = require("../domain/ring/ringRelay");
 const { ElectionService } = require("../domain/election/ElectionService");
+const {
+  shouldScheduleClusterElection: shouldScheduleClusterElectionPolicy,
+} = require("../domain/election/clusterElectionPolicy");
 const { RequestQueue } = require("../domain/coordinator/RequestQueue");
 const { PendingTransactionBuffer } = require("../domain/coordinator/PendingTransactionBuffer");
 const { connectPeer } = require("../infrastructure/socket/SocketPeerClient");
@@ -10,6 +14,8 @@ const { StorageHttpClient } = require("../infrastructure/storage/StorageHttpClie
 const { LabLogger } = require("../infrastructure/logging/LabLogger");
 const { SimulationRunner } = require("./SimulationRunner");
 const { SimulationPolicy } = require("./SimulationPolicy");
+const { CoordinatorTenure } = require("./CoordinatorTenure");
+const { NodeStorageBinding } = require("./NodeStorageBinding");
 const { DiscoveryCoordinator } = require("./DiscoveryCoordinator");
 const { StorageReachabilityMonitor } = require("./StorageReachabilityMonitor");
 const { NodeHttpServer } = require("../http/NodeHttpServer");
@@ -64,6 +70,8 @@ class NodeApplication {
     this.electionDebounceTimer = null;
     this.coordinatorSocket = null;
     this.simulationRunner = null;
+    this.coordinatorTenure = new CoordinatorTenure(this);
+    this.storageBinding = new NodeStorageBinding(this);
     this.simulationPolicy = SimulationPolicy.fromConfig(config);
     this.discoveryCoordinator = null;
     this.storageMonitor = null;
@@ -73,6 +81,76 @@ class NodeApplication {
     this.simSeq = 0;
     this.nodeHttp = null;
     this.timelineStdoutPoller = null;
+    this.lastProcessedKillEpoch = null;
+    this.lastSuspectWave = null;
+    this.coordinatorCooldownUntil = 0;
+    /** Ex-líder: fora do anel/eleição até COORDINATOR_APPLY de outro nó. */
+    this.ringJoinDeferred = false;
+    this.leadershipHealTimer = null;
+    this.inElectionSince = 0;
+  }
+
+  isEligibleForCoordinatorRole() {
+    if (this.simulatedDown) return false;
+    if (this.ringJoinDeferred) return false;
+    if (this.coordinatorCooldownUntil && Date.now() < this.coordinatorCooldownUntil) {
+      return false;
+    }
+    return true;
+  }
+
+  electionListForCoordinatorPick(electionList) {
+    return electionList.filter(
+      (port) => port !== this.config.port || this.isEligibleForCoordinatorRole()
+    );
+  }
+
+  beginExLeaderRecovery() {
+    this.ringJoinDeferred = true;
+    if (this.successorSocket?.connected) {
+      this.successorSocket.disconnect(true);
+    }
+    this.successorSocket = null;
+    this.successorIp = null;
+  }
+
+  async resumeRingParticipationAfterLeaderKnown() {
+    if (!this.ringJoinDeferred) return;
+    this.ringJoinDeferred = false;
+    await this.connectToRing();
+  }
+
+  ringConnectOptions(overrides = {}) {
+    return {
+      timeoutMs: this.config.peerConnectTimeoutMs,
+      retries: this.config.peerConnectRetries,
+      ...overrides,
+    };
+  }
+
+  async relayAlongRing(event, payload, options = {}) {
+    const { keepSocket = false, settleMs } = options;
+    const result = await ringRelay.emitAlongRing(
+      this.topology,
+      event,
+      payload,
+      this.ringConnectOptions({ keepSocket, settleMs })
+    );
+    if (!result.ok) {
+      this.logger.election(
+        LogEventCodes.RING_RELAY_FAIL,
+        `event=${event}`
+      );
+      if (this.isClusterElectionInitiator()) {
+        this.scheduleElectionDebounced();
+      }
+      return false;
+    }
+    if (keepSocket && result.socket) {
+      this.successorSocket = result.socket;
+      this.successorIp = this.topology.ipForPort(result.port);
+    }
+    return true;
   }
 
   getSimTxBurst() {
@@ -157,7 +235,9 @@ class NodeApplication {
 
     await this.tryBootstrapJoin();
     await this.syncClusterStateFromPeers();
-    await this.bootElectionIfLeader();
+    if (this.config.discoveryMode !== "mdns") {
+      await this.bootElectionIfLeader();
+    }
     this.simulationRunner = new SimulationRunner(this);
     if (!this.isCoordinator) {
       this.simulationRunner.start();
@@ -170,19 +250,50 @@ class NodeApplication {
       this.ringViewTimer = setInterval(() => this.logRingView(), ringInterval);
     }
     this.logRingView(true);
+    this.leadershipHealTimer = setInterval(
+      () => this.healClusterLeadership(),
+      5000
+    );
+  }
+
+  async healClusterLeadership() {
+    if (this.isCoordinator || this.ringJoinDeferred) return;
+    if (!this.inElection && this.coordinatorPort) {
+      if (!this.isCoordinator && !this.coordinatorSocket?.connected) {
+        await this.setupRegularNode();
+        await this.flushClientBuffer();
+        this.simulationRunner?.start();
+      }
+      return;
+    }
+    await this.syncClusterStateFromPeers();
+    if (this.coordinatorPort) {
+      this.inElection = false;
+      this.inElectionSince = 0;
+      this.electionList = [];
+      if (!this.isCoordinator) {
+        await this.setupRegularNode();
+        this.simulationRunner?.start();
+      }
+      return;
+    }
+    if (this.inElection && this.inElectionSince) {
+      const stuckMs = Date.now() - this.inElectionSince;
+      if (stuckMs > 30_000) {
+        this.logger.election("ELECTION_STUCK", `ms=${stuckMs}`);
+        this.inElection = false;
+        this.inElectionSince = 0;
+        this.electionList = [];
+        if (this.isClusterElectionInitiator()) {
+          this.scheduleElectionDebounced();
+        }
+      }
+    }
   }
 
   async onDiscoveryUpdate(peers, storageRecord) {
-    if (storageRecord?.host && !this.config.storageUrl) {
-      const url = `http://${storageRecord.host}:${storageRecord.port || 4000}`;
-      this.config.storageUrl = url.replace(/\/$/, "");
-      if (!this.storageClient) {
-        this.storageClient = new StorageHttpClient(
-          this.config.storageUrl,
-          this.config.storageWriteToken
-        );
-      }
-      await this.refreshStorageHealth();
+    if (storageRecord?.host) {
+      this.storageBinding.considerMdnsRecord(storageRecord);
     }
     const changed = this.topology.mergeDiscoveredPeers(peers);
     if (changed) {
@@ -192,10 +303,40 @@ class NodeApplication {
       }
       this.successorSocket = null;
       await this.syncClusterStateFromPeers();
-      if (this.config.port === this.topology.minPort) {
+      if (this.shouldScheduleClusterElection()) {
         this.scheduleElectionDebounced();
       }
     }
+  }
+
+  expectedLocalPeerCount() {
+    return Math.min(Math.max(this.config.nodeCount || 1, 1), 4);
+  }
+
+  isClusterElectionInitiator() {
+    const ports = this.topology.portsInOrder;
+    const initiator = ports.length ? this.topology.minPort : this.config.advertisePortBase;
+    return this.config.port === initiator;
+  }
+
+  isLocalPeerSetReady() {
+    return this.topology.portsInOrder.length >= this.expectedLocalPeerCount();
+  }
+
+  shouldScheduleClusterElection() {
+    const ports = this.topology.portsInOrder;
+    const clusterInitiatorPort = ports.length
+      ? this.topology.minPort
+      : this.config.advertisePortBase;
+    return shouldScheduleClusterElectionPolicy({
+      port: this.config.port,
+      clusterInitiatorPort,
+      advertisePortBase: this.config.advertisePortBase,
+      coordinatorPort: this.coordinatorPort,
+      inElection: this.inElection,
+      peerCount: this.topology.portsInOrder.length,
+      nodeCount: this.config.nodeCount,
+    });
   }
 
   async fetchClusterState(host, httpPort) {
@@ -218,10 +359,19 @@ class NodeApplication {
       if (detail.port === this.config.port) continue;
       const httpPort =
         detail.port + parseInt(process.env.NODE_HTTP_PORT_OFFSET || "1000", 10);
-      const state = await this.fetchClusterState(detail.host, httpPort);
+      const host =
+        this.topology.connectHostForPort(detail.port) || detail.host;
+      const state = await this.fetchClusterState(host, httpPort);
+      if (state?.storageUrl) {
+        this.storageBinding.considerPeerClusterState(state);
+      }
       if (!state?.coordinatorPort) continue;
       const epoch = state.epoch || 0;
-      if (epoch > this.lastCoordinatorEpoch) {
+      const shouldApply =
+        !this.coordinatorPort && state.coordinatorPort
+          ? epoch >= this.lastCoordinatorEpoch
+          : epoch > this.lastCoordinatorEpoch;
+      if (shouldApply) {
         await this.onCoordinatorMessage(
           {
             coordinatorPort: state.coordinatorPort,
@@ -283,6 +433,7 @@ class NodeApplication {
       host: this.config.advertiseHost,
     });
     client.disconnect(true);
+    await this.syncClusterStateFromPeers();
   }
 
   async refreshStorageHealth() {
@@ -307,6 +458,8 @@ class NodeApplication {
       isCoordinator: this.isCoordinator,
       inElection: this.inElection,
       coordinatorPort: this.coordinatorPort,
+      ringJoinDeferred: this.ringJoinDeferred,
+      eligibleForCoordinator: this.isEligibleForCoordinatorRole(),
       storageUp: this.storageUp,
       storageUrl: this.config.storageUrl,
       simMode: this.simulationPolicy.mode,
@@ -345,16 +498,32 @@ class NodeApplication {
         "ELECTION_HEARD",
         `ports=[${list.join(",")}]`
       );
+      if (this.ringJoinDeferred) {
+        await this.relayAlongRing(SocketEvents.ELECTION_ROUND, list);
+        return;
+      }
       await this.startElection(list);
     });
     socket.on(SocketEvents.COORDINATOR_ANNOUNCE, async (data) => {
+      if (this.ringJoinDeferred) {
+        await this.onCoordinatorMessage(data, { skipForward: true });
+        await this.relayAlongRing(SocketEvents.COORDINATOR_ANNOUNCE, data);
+        return;
+      }
       await this.onCoordinatorMessage(data);
     });
     socket.on(SocketEvents.RECONNECT, async (data) => {
       await this.reconnect(data?.port, data?.host);
     });
-    socket.on(SocketEvents.COORDINATOR_SUSPECT, async () => {
-      if (this.isCoordinator) await this.onCoordinatorSuspect();
+    socket.on(SocketEvents.COORDINATOR_SUSPECT, async (data) => {
+      if (this.ringJoinDeferred) {
+        const wave = data?.wave ?? Date.now();
+        if (wave === this.lastSuspectWave) return;
+        this.lastSuspectWave = wave;
+        await this.relayAlongRing(SocketEvents.COORDINATOR_SUSPECT, data);
+        return;
+      }
+      await this.onCoordinatorSuspectRing(data);
     });
     socket.on(SocketEvents.LEADER_KILL_REQUEST, async (data) => {
       await this.onLeaderKillRequest(data);
@@ -380,22 +549,22 @@ class NodeApplication {
   }
 
   async electSuccessor() {
-    if (this.successorSocket?.connected) {
-      this.successorSocket.disconnect(true);
-    }
+    if (this.ringJoinDeferred) return null;
+    if (this.successorSocket?.connected) return this.successorSocket;
     this.successorSocket = null;
     this.successorIp = null;
-    const successorPort = this.topology.successorPort();
-    if (!successorPort) return null;
-    const address = this.topology.peerAddressForPort(successorPort);
-    const socket = await connectPeer(address, {
-      timeoutMs: this.config.peerConnectTimeoutMs,
-      retries: this.config.peerConnectRetries,
-    });
-    if (socket?.connected) {
-      this.successorIp = this.topology.ipForPort(successorPort);
-      this.successorSocket = socket;
-      return socket;
+    const hop = await ringRelay.connectAlongRing(
+      this.topology,
+      this.ringConnectOptions()
+    );
+    if (hop.ok) {
+      this.successorSocket = hop.socket;
+      this.successorIp = this.topology.ipForPort(hop.port);
+      return hop.socket;
+    }
+    this.logger.election(LogEventCodes.RING_RELAY_FAIL, "successor=none");
+    if (this.isClusterElectionInitiator()) {
+      this.scheduleElectionDebounced();
     }
     return null;
   }
@@ -406,6 +575,7 @@ class NodeApplication {
   }
 
   async removeCoordinator() {
+    this.coordinatorTenure.stop();
     if (this.isCoordinator) {
       this.isCoordinator = false;
       this.requestQueue.clear();
@@ -414,13 +584,13 @@ class NodeApplication {
     this.coordinatorPort = null;
     this.coordinatorSocket = null;
     this.simulationRunner?.stop();
-    if (!this.isCoordinator) {
+    if (!this.isCoordinator && !this.inElection) {
       this.simulationRunner?.start();
     }
   }
 
   async reconnect(announcedPort, announcedHost) {
-    if (announcedPort == null) return;
+    if (announcedPort == null || this.ringJoinDeferred) return;
     const host =
       announcedHost ||
       this.topology.ipListByPort[announcedPort] ||
@@ -433,6 +603,7 @@ class NodeApplication {
   }
 
   async connectToRing() {
+    if (this.ringJoinDeferred) return;
     for (const address of this.topology.allPeerAddressesExceptSelf()) {
       const clientSocket = await connectPeer(address, {
         timeoutMs: this.config.peerConnectTimeoutMs,
@@ -449,21 +620,44 @@ class NodeApplication {
   }
 
   scheduleElectionDebounced() {
+    if (this.ringJoinDeferred) return;
     if (this.electionDebounceTimer) clearTimeout(this.electionDebounceTimer);
     this.electionDebounceTimer = setTimeout(async () => {
       this.electionDebounceTimer = null;
-      if (!this.inElection) await this.startElection([]);
+      if (!this.inElection && !this.ringJoinDeferred) {
+        await this.startElection([]);
+      }
     }, this.config.electionDebounceMs);
+  }
+
+  async onCoordinatorSuspectRing(data) {
+    if (this.ringJoinDeferred) return;
+    const wave = data?.wave ?? Date.now();
+    if (wave === this.lastSuspectWave) {
+      return;
+    }
+    this.lastSuspectWave = wave;
+    await this.onCoordinatorSuspect();
+    await this.relayAlongRing(SocketEvents.COORDINATOR_SUSPECT, { wave });
   }
 
   async onCoordinatorSuspect() {
     await this.removeCoordinator();
+    if (this.ringJoinDeferred) return;
     await this.connectToRing();
-    this.scheduleElectionDebounced();
+    if (this.isClusterElectionInitiator()) {
+      this.scheduleElectionDebounced();
+    }
   }
 
   async bootElectionIfLeader() {
-    if (this.config.port !== this.topology.minPort) return;
+    if (this.ringJoinDeferred) return;
+    if (!this.isClusterElectionInitiator()) return;
+    if (!this.isLocalPeerSetReady()) {
+      setTimeout(() => this.bootElectionIfLeader(), 1000);
+      return;
+    }
+    if (this.coordinatorPort || this.inElection) return;
     const successor = await this.getSuccessor();
     if (successor) {
       await this.startElection([]);
@@ -472,61 +666,140 @@ class NodeApplication {
     }
   }
 
+  async forwardElectionRound(electionList) {
+    if (this.ringJoinDeferred) return;
+    this.logger.election(
+      "ELECTION_PASS",
+      `ports=[${electionList.join(",")}] defer=ineligible`
+    );
+    await this.relayAlongRing(SocketEvents.ELECTION_ROUND, electionList, {
+      keepSocket: true,
+    });
+  }
+
   async startElection(electionList) {
-    for (const clientPort of electionList) {
-      await this.reconnect(clientPort);
+    if (this.ringJoinDeferred) return;
+    if (this.isCoordinator && !this.inElection) {
+      return;
     }
     const list = [...electionList];
+    if (
+      list.length === 0 &&
+      this.coordinatorPort &&
+      !this.inElection &&
+      this.isLocalPeerSetReady()
+    ) {
+      return;
+    }
+    for (const clientPort of list) {
+      await this.reconnect(clientPort);
+    }
     if (ElectionService.shouldParticipateFirstWave(this.config.port, list)) {
       await this.participateInElection(list);
       return;
     }
-    if (
-      ElectionService.shouldRestartElection(
-        this.config.port,
-        list,
-        this.inElection
-      )
-    ) {
-      await this.participateInElection([this.config.port]);
+    const initiator = this.topology.minPort;
+    if (ElectionService.shouldJoinMidRing(this.config.port, list, this.inElection)) {
+      if (this.isEligibleForCoordinatorRole()) {
+        const merged = [...list];
+        if (!merged.includes(this.config.port)) {
+          merged.push(this.config.port);
+        }
+        await this.participateInElection(merged);
+      } else {
+        await this.forwardElectionRound(list);
+      }
       return;
     }
-    if (ElectionService.isInitiatorComplete(this.config.port, list)) {
+    if (
+      list.includes(this.config.port) &&
+      !ElectionService.isInitiatorComplete(initiator, list)
+    ) {
+      await this.forwardElectionRound(list);
+      return;
+    }
+    if (
+      ElectionService.isInitiatorComplete(initiator, list) &&
+      this.config.port === initiator
+    ) {
       await this.completeElection(list);
     }
   }
 
   async participateInElection(electionList) {
+    if (this.ringJoinDeferred) return;
     this.inElection = true;
+    this.inElectionSince = Date.now();
     await this.removeCoordinator();
-    const successorSocket = await this.getSuccessor();
-    if (!electionList.includes(this.config.port)) {
+    if (
+      !electionList.includes(this.config.port) &&
+      this.isEligibleForCoordinatorRole()
+    ) {
       electionList.push(this.config.port);
     }
     this.electionList = electionList;
+    const candidates = this.electionListForCoordinatorPick(electionList);
     this.logger.election("ELECTION_ROUND", `ports=[${electionList.join(",")}]`);
-    if (successorSocket) {
-      const successorPort = this.topology.successorPort();
-      this.logger.election(
-        "ELECTION_PASS",
-        `successorPort=${successorPort} ports=[${electionList.join(",")}]`
-      );
-      successorSocket.emit(SocketEvents.ELECTION_ROUND, electionList);
-    } else {
-      this.scheduleElectionDebounced();
+    if (this.topology.portsInOrder.length === 1) {
+      if (candidates.length === 0) {
+        this.inElection = false;
+        return;
+      }
+      await this.completeElection(candidates);
+      return;
+    }
+    if (this.topology.ringPortsAfterLocal().length === 0) {
+      if (candidates.length === 0) {
+        this.inElection = false;
+        return;
+      }
+      await this.completeElection(candidates);
+      return;
+    }
+    const successorPort = this.topology.successorPort();
+    this.logger.election(
+      "ELECTION_PASS",
+      `successorPort=${successorPort} ports=[${electionList.join(",")}]`
+    );
+    const passed = await this.relayAlongRing(SocketEvents.ELECTION_ROUND, electionList, {
+      keepSocket: false,
+      settleMs: 300,
+    });
+    if (!passed) {
+      this.inElection = false;
+      if (this.isClusterElectionInitiator()) {
+        this.scheduleElectionDebounced();
+      }
     }
   }
 
   async completeElection(electionList) {
-    const coordinatorPort = ElectionService.pickCoordinatorPort(electionList);
+    const peerCount = this.topology.portsInOrder.length;
+    const initiator = this.topology.minPort;
+    if (peerCount > 1 && this.config.port !== initiator) {
+      this.inElection = false;
+      return;
+    }
+    const candidates = this.electionListForCoordinatorPick(electionList);
+    if (candidates.length === 0) {
+      this.inElection = false;
+      this.electionList = [];
+      return;
+    }
+    const coordinatorPort = ElectionService.pickCoordinatorPort(candidates);
     const epoch = Date.now();
     this.coordinatorPort = coordinatorPort;
     this.inElection = false;
     this.electionList = [];
     this.lastCoordinatorEpoch = epoch;
     if (this.coordinatorPort === this.config.port) {
+      if (!this.isEligibleForCoordinatorRole()) {
+        this.coordinatorPort = null;
+        return;
+      }
       this.isCoordinator = true;
       this.simulatedDown = false;
+      this.ringJoinDeferred = false;
       await this.setupCoordinator();
       this.simulationRunner?.stop();
     }
@@ -541,15 +814,23 @@ class NodeApplication {
       epoch,
       processList: electionList,
     };
-    const successorSocket = await this.getSuccessor();
-    if (successorSocket) {
-      successorSocket.emit(SocketEvents.COORDINATOR_ANNOUNCE, payload);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const ok = await this.relayAlongRing(SocketEvents.COORDINATOR_ANNOUNCE, payload);
+      if (ok) break;
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
 
   async onCoordinatorMessage(data, options = {}) {
     const epoch = data?.epoch ?? 0;
-    if (epoch <= this.lastCoordinatorEpoch) return;
+    if (epoch < this.lastCoordinatorEpoch) return;
+    if (
+      epoch === this.lastCoordinatorEpoch &&
+      this.coordinatorPort != null &&
+      this.coordinatorPort === data.coordinatorPort
+    ) {
+      return;
+    }
     this.lastCoordinatorEpoch = epoch;
     this.coordinatorPort = data.coordinatorPort;
     this.inElection = false;
@@ -562,8 +843,11 @@ class NodeApplication {
       this.simulationRunner?.stop();
     } else {
       this.isCoordinator = false;
+      this.simulatedDown = false;
       await this.setupRegularNode();
+      this.simulationRunner?.stop();
       this.simulationRunner?.start();
+      await this.resumeRingParticipationAfterLeaderKnown();
     }
     const leaderMeta = this.topology.metaForPort(this.coordinatorPort);
     this.logger.election(
@@ -571,10 +855,7 @@ class NodeApplication {
       `port=${this.coordinatorPort} node=${leaderMeta?.nodeName || "?"}`
     );
     if (!options.skipForward) {
-      const successorSocket = await this.getSuccessor();
-      if (successorSocket) {
-        successorSocket.emit(SocketEvents.COORDINATOR_ANNOUNCE, data);
-      }
+      await this.relayAlongRing(SocketEvents.COORDINATOR_ANNOUNCE, data);
     }
     await this.flushClientBuffer();
   }
@@ -596,11 +877,13 @@ class NodeApplication {
     }
     this.registerCoordinatorHandlersOnAllSockets();
     this.logger.write("LEADER_UP", `port=${this.config.port}`);
+    this.coordinatorTenure.startIfEnabled();
   }
 
   async setupRegularNode() {
     if (this.isCoordinator || this.inElection || !this.coordinatorPort) return;
-    const host = this.topology.hostForCoordinator(this.coordinatorPort);
+    const host = this.topology.connectHostForPort(this.coordinatorPort);
+    if (!host) return;
     const coordinatorSocket = await connectPeer(`${host}:${this.coordinatorPort}`, {
       timeoutMs: this.config.peerConnectTimeoutMs,
       retries: this.config.peerConnectRetries,
@@ -638,7 +921,7 @@ class NodeApplication {
   }
 
   sendSimulatedTransaction(burstIndex = 0) {
-    if (this.isCoordinator || this.inElection) return;
+    if (this.isCoordinator || this.inElection || !this.coordinatorPort) return;
     if (this.simulationPolicy.paused || !this.simulationPolicy.txEnabled) return;
     let deltaCents;
     if (
@@ -678,6 +961,12 @@ class NodeApplication {
   }
 
   async emitTransaction(tx) {
+    if (!this.coordinatorSocket?.connected) {
+      if (this.config.clientBufferOnLeaderLoss) {
+        this.pendingBuffer.push(tx);
+      }
+      return;
+    }
     this.logger.line(
       "FOLLOWER",
       "TX_SEND",
@@ -685,31 +974,42 @@ class NodeApplication {
     );
     await this.logger.drainTimeline();
     const responseEvent = transactionResponseEvent(tx.requestId);
+    const socket = this.coordinatorSocket;
+    if (!socket?.connected) {
+      if (this.config.clientBufferOnLeaderLoss) {
+        this.pendingBuffer.push(tx);
+      }
+      return;
+    }
     const timeout = setTimeout(() => {
-      this.coordinatorSocket.off(responseEvent);
+      socket?.off(responseEvent);
       this.logger.line("FOLLOWER", "TX_TIMEOUT", `req=${tx.requestId}`);
       if (this.config.clientBufferOnLeaderLoss) {
         this.pendingBuffer.push(tx);
       }
-      this.coordinatorSocket.emit(SocketEvents.COORDINATOR_SUSPECT);
+      const wave = Date.now();
+      socket?.emit(SocketEvents.COORDINATOR_SUSPECT, { wave });
       this.scheduleElectionDebounced();
     }, this.config.requestTimeoutMs);
-    this.coordinatorSocket.once(responseEvent, async (response) => {
+    socket.once(responseEvent, async (response) => {
       clearTimeout(timeout);
       const status = response?.status || "?";
       this.logger.line("FOLLOWER", "TX_ACK", `req=${tx.requestId} status=${status}`);
       await this.logger.drainTimeline();
     });
-    this.coordinatorSocket.emit(SocketEvents.TRANSACTION_REQUEST, tx);
+    socket.emit(SocketEvents.TRANSACTION_REQUEST, tx);
   }
 
   async flushClientBuffer() {
     if (!this.coordinatorSocket?.connected) {
       await this.setupRegularNode();
     }
+    if (!this.coordinatorSocket?.connected) {
+      return;
+    }
     const items = this.pendingBuffer.drain();
     for (const tx of items) {
-      this.emitTransaction(tx);
+      await this.emitTransaction(tx);
     }
   }
 
@@ -727,16 +1027,6 @@ class NodeApplication {
         reason: "leader_simulated_down",
       });
       return;
-    }
-    if (this.config.useStorageHttp && !this.storageUp) {
-      if (this.config.discardOnStorageDown) {
-        socket.emit(transactionResponseEvent(requestData.requestId), {
-          status: "Rejected",
-          reason: "storage_down",
-        });
-        this.logger.storage("DISCARD", `req=${requestData.requestId} reason=storage_down`);
-        return;
-      }
     }
     const pos = this.requestQueue.size + 1;
     const result = this.requestQueue.tryEnqueue({ requestData, socket });
@@ -784,7 +1074,20 @@ class NodeApplication {
       }
       if (this.config.useStorageHttp) {
         await this.refreshStorageHealth();
-        if (!this.storageUp) throw new Error("storage_down");
+        if (!this.storageUp) {
+          this.logger.storage(
+            "DEFER",
+            `req=${request.requestId} reason=storage_down`
+          );
+          this.txStoryLogger.onAcceptedWithoutStorage(request);
+          await this.logger.drainTimeline();
+          socket.emit(transactionResponseEvent(request.requestId), {
+            status: "Accepted",
+            reason: "storage_down",
+            persisted: false,
+          });
+          return;
+        }
         const result = await this.storageClient.applyTransaction({
           requestId: request.requestId,
           hostName: request.hostName || request.hostname,
@@ -835,18 +1138,24 @@ class NodeApplication {
   }
 
   async onLeaderKillRequest(data) {
+    const epoch = data?.killEpoch;
+    if (epoch != null && epoch === this.lastProcessedKillEpoch) {
+      return;
+    }
     if (this.inElection) {
       this.logger.sim("KILL_REJECT", "election_in_progress");
       return;
     }
     await this.refreshStorageHealth();
-    if (!this.storageUp) {
+    const selfTenure = data?.reason === "leader-tenure";
+    if (!this.storageUp && !selfTenure) {
       this.logger.sim("KILL_REJECT", "storage_down");
       return;
     }
     const initiator = `${data?.initiatorHost || "?"}:${data?.initiatorNode || "?"}`;
-    this.logger.sim("KILL_REQUEST", initiator);
     if (this.isCoordinator && this.coordinatorPort === this.config.port) {
+      if (epoch != null) this.lastProcessedKillEpoch = epoch;
+      this.logger.sim("KILL_REQUEST", initiator);
       this.simulatedDown = true;
       this.isCoordinator = false;
       this.requestQueue.clear();
@@ -863,13 +1172,33 @@ class NodeApplication {
         }
       }
       this.logger.sim("LEADER_DOWN", "simulated");
-      await this.onCoordinatorSuspect();
+      this.coordinatorCooldownUntil =
+        Date.now() + (this.config.leaderCooldownMs || 25_000);
+      const wave = epoch ?? Date.now();
+      this.lastSuspectWave = wave;
+      await this.removeCoordinator();
+      const successorBeforeDefer = await this.getSuccessor();
+      if (successorBeforeDefer) {
+        successorBeforeDefer.emit(SocketEvents.COORDINATOR_SUSPECT, { wave });
+      }
+      this.beginExLeaderRecovery();
       return;
     }
+    if (epoch != null) this.lastProcessedKillEpoch = epoch;
     const successor = await this.getSuccessor();
     if (successor) {
       successor.emit(SocketEvents.LEADER_KILL_REQUEST, data);
     }
+  }
+
+  async requestLeaderSelfResignation(reason) {
+    if (!this.isCoordinator || this.inElection) return;
+    await this.onLeaderKillRequest({
+      initiatorHost: this.config.labHostName,
+      initiatorNode: this.config.hostname,
+      reason,
+      killEpoch: Date.now(),
+    });
   }
 
   requestLeaderKill(reason) {
@@ -880,9 +1209,12 @@ class NodeApplication {
       reason,
       killEpoch: Date.now(),
     };
-    this.onLeaderKillRequest(payload);
     this.getSuccessor().then((s) => {
-      if (s) s.emit(SocketEvents.LEADER_KILL_REQUEST, payload);
+      if (s) {
+        s.emit(SocketEvents.LEADER_KILL_REQUEST, payload);
+        return;
+      }
+      this.onLeaderKillRequest(payload);
     });
   }
 }

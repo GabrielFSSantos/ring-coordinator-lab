@@ -60,6 +60,26 @@ class TransactionStoryLogger {
     return true;
   }
 
+  onAcceptedWithoutStorage(requestData) {
+    if (!this.enabled()) {
+      return false;
+    }
+    const id = requestData.requestId;
+    const state = this.pending.get(id);
+    this.pending.delete(id);
+    const from =
+      state?.fromNode ||
+      requestData.nodeName ||
+      requestData.hostname ||
+      "?";
+    const lines = [
+      `Aceitou pedido de ${from} (banco fora — não gravou).`,
+      "Gravado no banco: não",
+    ];
+    this.logger.story("LEADER", lines);
+    return true;
+  }
+
   onFailure(requestData, errMessage) {
     if (!this.enabled()) {
       return false;

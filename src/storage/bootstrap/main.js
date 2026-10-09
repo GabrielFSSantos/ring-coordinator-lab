@@ -27,6 +27,12 @@ const { writeOpsLine } = require("../../server/infrastructure/logging/dockerOpsL
 
 const config = loadStorageConfig();
 const server = new StorageServer(config);
+const shutdown = () => {
+  server.stop();
+  process.exit(0);
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 server.start().catch((err) => {
   writeOpsLine(true, {
     labHostName: config.labHostName,

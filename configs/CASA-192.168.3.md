@@ -1,49 +1,14 @@
 # Casa — Gabriel (PC1) + gfswo (PC2)
 
-| PC | Wi-Fi | Script |
+Banco: `./lab storage`. Quatro nós: `./lab start`. Um nó: `./lab node`. Logs: `./lab logs` (host).
+
+| PC | Wi-Fi | Comando |
 | --- | --- | --- |
-| PC1 | `192.168.3.131` | `./scripts/run-on-pc-a.sh` |
+| PC1 | `192.168.3.131` (anel) · `STORAGE_URL=http://127.0.0.1:4000` no Docker | `./scripts/run-on-pc-a.sh` |
 | PC2 | `192.168.3.125` | `./scripts/run-on-pc-b.sh` |
 
-Firewall: PC1 TCP 4000, 3002–3005, 4002–4005 · PC2 TCP 3006–3009, 4006–4009.
+Narrativa: `docker compose logs -f tail`
 
-## PC1 — copiar no WSL (Afrodite)
+Parar no PC1: `./scripts/lab-up.sh down`
 
-```bash
-cd ~/GitHub/ring-coordinator-lab
-git pull
-chmod +x scripts/run-on-pc-a.sh
-./scripts/run-on-pc-a.sh
-```
-
-Narrativa (outro terminal):
-
-```bash
-cd ~/GitHub/ring-coordinator-lab
-docker compose --profile storage logs -f lan-tail
-```
-
-Teste:
-
-```bash
-curl -s http://127.0.0.1:4000/v1/health
-curl -s http://192.168.3.131:4000/v1/health
-```
-
-## PC2 — copiar no WSL (Vostro15)
-
-Requer Docker Desktop com integração WSL. Depois do PC1 no ar:
-
-```bash
-cd ~/GitHub/ring-coordinator-lab
-git pull
-chmod +x scripts/run-on-pc-b.sh
-./scripts/run-on-pc-b.sh
-```
-
-Teste:
-
-```bash
-curl -s http://192.168.3.131:4000/v1/health
-curl -s http://192.168.3.125:4006/v1/cluster/state
-```
+Firewall: PC1 TCP 4000, 3002–3005 · PC2 TCP 3006–3009

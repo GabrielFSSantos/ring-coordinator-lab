@@ -1,4 +1,7 @@
-const { parseLogStdoutMode } = require("../server/config/env");
+const {
+  parseLogStdoutMode,
+  resolveStorageUrl,
+} = require("../server/config/env");
 
 function boolEnv(name, defaultVal) {
   const v = process.env[name];
@@ -7,7 +10,7 @@ function boolEnv(name, defaultVal) {
 }
 
 function loadLogViewerConfig() {
-  const storageUrl = (process.env.STORAGE_URL || "").replace(/\/$/, "");
+  const storageUrl = resolveStorageUrl(process.env);
   return {
     labHostName: process.env.LAB_HOST_NAME || "lab-tail",
     hostname: process.env.HOSTNAME || "lab-tail",
@@ -22,6 +25,7 @@ function loadLogViewerConfig() {
     logFormat: (process.env.LOG_FORMAT || "human").toLowerCase(),
     logStyle: (process.env.LOG_STYLE || "box").toLowerCase(),
     logDockerOps: boolEnv("LOG_DOCKER_OPS", true),
+    labRole: (process.env.LAB_ROLE || "").toLowerCase(),
   };
 }
 

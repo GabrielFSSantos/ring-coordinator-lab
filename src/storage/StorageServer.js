@@ -8,6 +8,8 @@ const { parseSkipCodes } = require("../server/infrastructure/logging/timelinePer
 const { StorageHttpClient } = require("../server/infrastructure/storage/StorageHttpClient");
 const { TimelineStdoutPoller } = require("../server/infrastructure/logging/TimelineStdoutPoller");
 const { writeOpsLine } = require("../server/infrastructure/logging/dockerOpsLog");
+const { StorageMdnsPublisher } = require("./infrastructure/StorageMdnsPublisher");
+const { resolveWritablePrimary } = require("./domain/StoragePrimaryResolver");
 
 async function fetchJson(url, timeoutMs = 3000) {
   const controller = new AbortController();
@@ -45,6 +47,7 @@ class StorageServer {
     this.isWritable = false;
     this.db = null;
     this.server = null;
+    this.mdnsPublisher = null;
   }
 
   async start() {
@@ -129,6 +132,17 @@ class StorageServer {
       });
       this.timelineStdoutPoller.start();
     }
+
+    if (this.isWritable && this.primaryBaseUrl) {
+      this.mdnsPublisher = new StorageMdnsPublisher(this.config);
+      this.mdnsPublisher.start(this.primaryBaseUrl);
+    }
+  }
+
+  stop() {
+    this.mdnsPublisher?.stop();
+    this.timelineStdoutPoller?.stop();
+    this.server?.close();
   }
 
   async resolvePrimaryMode() {
@@ -143,16 +157,15 @@ class StorageServer {
       (this.config.bootstrapPeer
         ? `http://${this.config.bootstrapPeer.split(":")[0]}:${this.config.storageHttpPort}`
         : null);
-    if (discovery) {
-      const remote = await fetchJson(`${discovery}/v1/storage/primary`);
-      if (remote?.baseUrl) {
-        this.mode = "standby";
-        this.primaryBaseUrl = remote.baseUrl;
-        this.isWritable = false;
-        return;
-      }
+    const resolved = await resolveWritablePrimary({
+      ...this.config,
+      storageDiscoveryUrl: discovery,
+    });
+    this.mode = resolved.mode;
+    this.isWritable = resolved.isWritable;
+    if (resolved.primaryBaseUrl) {
+      this.primaryBaseUrl = resolved.primaryBaseUrl;
     }
-    this.isWritable = true;
   }
 
   applyCors(res, req) {

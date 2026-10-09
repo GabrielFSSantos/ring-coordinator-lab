@@ -74,6 +74,26 @@ class RingTopology {
     return this.ipListByPort[coordinatorPort];
   }
 
+  /**
+   * IP para conexão Socket.io (anel/líder). No mesmo host (WSL/Docker) usa loopback.
+   */
+  connectHostForPort(port) {
+    const ip = this.ipListByPort[port];
+    if (!ip) return null;
+    const dockerPeerHost = (process.env.DOCKER_PEER_CONNECT_HOST || "").trim();
+    const override = (process.env.RING_CONNECT_HOST || "").trim();
+    if (ip === this.localIp) {
+      if (port === this.localPort) {
+        return override || "127.0.0.1";
+      }
+      if (dockerPeerHost) {
+        return dockerPeerHost;
+      }
+      return override || "127.0.0.1";
+    }
+    return ip;
+  }
+
   successorPort() {
     const ports = this.portsInOrder;
     for (const p of ports) {
@@ -82,6 +102,19 @@ class RingTopology {
       }
     }
     return ports.length ? ports[0] : null;
+  }
+
+  /**
+   * Percurso circular no anel lógico: sucessor imediato até completar o ciclo (sem self).
+   */
+  ringPortsAfterLocal() {
+    const ports = this.portsInOrder.filter((p) => p !== this.localPort);
+    if (!ports.length) return [];
+    const first = this.successorPort();
+    if (first == null || first === this.localPort) return ports;
+    const startIdx = ports.indexOf(first);
+    if (startIdx < 0) return ports;
+    return [...ports.slice(startIdx), ...ports.slice(0, startIdx)];
   }
 
   successorIp() {
@@ -94,6 +127,15 @@ class RingTopology {
     if (this.ipListByPort[port] === ip) {
       delete this.ipListByPort[port];
     }
+  }
+
+  removePeerPort(port) {
+    const portNum = parseInt(port, 10);
+    if (!this.ipListByPort[portNum]) return false;
+    delete this.ipListByPort[portNum];
+    delete this.peerMetaByPort[portNum];
+    this.ipListByPort = ipsToObjectSorted({ ...this.ipListByPort });
+    return true;
   }
 
   addPeer(port, ip, meta = {}) {
@@ -154,14 +196,15 @@ class RingTopology {
   }
 
   peerAddressForPort(port) {
-    const ip = this.ipListByPort[port];
-    return ip ? `${ip}:${port}` : null;
+    const host = this.connectHostForPort(port);
+    return host ? `${host}:${port}` : null;
   }
 
   allPeerAddressesExceptSelf() {
-    return Object.entries(this.ipListByPort)
-      .filter(([port]) => parseInt(port, 10) !== this.localPort)
-      .map(([port, ip]) => `${ip}:${port}`);
+    return this.portsInOrder
+      .filter((p) => p !== this.localPort)
+      .map((p) => this.peerAddressForPort(p))
+      .filter(Boolean);
   }
 }
 

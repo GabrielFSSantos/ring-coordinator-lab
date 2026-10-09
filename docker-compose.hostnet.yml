@@ -1,0 +1,24 @@
+# Linux nativo (sem Docker Desktop): host network + mDNS na interface LAN.
+# Uso: LAB_USE_HOSTNET=1 ./lab start
+x-hostnet-node: &hostnet-node
+  network_mode: host
+  ports: !reset []
+  networks: !reset []
+  environment:
+    STORAGE_URL: http://127.0.0.1:4000
+
+services:
+  storage:
+    network_mode: host
+    ports: !reset []
+    networks: !reset []
+  node-3002:
+    <<: *hostnet-node
+  node-3003:
+    <<: *hostnet-node
+  node-3004:
+    <<: *hostnet-node
+  node-3005:
+    <<: *hostnet-node
+  node-join:
+    <<: *hostnet-node

@@ -1,61 +1,46 @@
 # Ring Coordinator Lab
 
-Simulação de **eleição em anel**, **mutex centralizado** e **ledger** (saldo compartilhado) com storage HTTP.
+Eleição em anel, mutex centralizado e ledger compartilhado (storage HTTP).
 
-## Documentação
+## Requisitos
 
-- [docs/README.md](docs/README.md)
-- [Simulação LAN + ledger](docs/documentation/17_simulacao_lan_ledger.md)
-- [Dois PCs em casa (8 nós)](docs/documentation/18_lan_dois_pcs_casa.md)
-- Variáveis: [lab.env.example](lab.env.example)
-
-## Um `lab.env` para todos
-
-1. `cp lab.env.example lab.env`
-2. Em LAN: todos usam o **mesmo** `STORAGE_URL` (IP do PC do banco, passado no slide/chat).
-3. Cada pessoa ajusta só: `ADVERTISE_HOST`, `LAB_HOST_NAME`, `ADVERTISE_PORT_BASE`, `NODE_COUNT`.
-
-| Modo | Comando |
+| Runtime | O que precisa |
 | --- | --- |
-| **Docker local** (4 nós + banco) | `docker compose --profile local --env-file lab.env up --build` ou `./scripts/lan-up.sh local` |
-| **LAN — só banco** | `docker compose --profile storage --env-file lab.env up --build` |
-| **LAN — só nós** | `docker compose --profile nodes --env-file lab.env up --build` |
-| **LAN — banco + nós** | `docker compose --profile storage --profile nodes --env-file lab.env up --build` |
-| **LAN — só observar** (tail remoto) | `docker compose --profile tail --env-file lab.env up --build` ou `./scripts/lan-tail.sh` |
-| **npm (sem Docker)** | `cd src && npm run storage` (banco) · `npm run server` (nó) · `npm run tail` (narrativa) |
+| **Docker** | Docker Desktop com integração WSL (Ubuntu) — `./lab storage` e `./lab start` |
+| **Nativo** | Node.js **20+** — `./lab node`, `./lab logs`; `./lab start --native` (4 processos) |
 
-Docker local: `lab.env` na raiz já aponta para `172.25.0.10` e `DISCOVERY_MODE=off`.
-
-- Nós: portas `3002`–`3005`
-- Storage: `http://localhost:4000` · `GET /v1/balance`
-- Dados: `data/ledger.db` (com `LEDGER_RESET_ON_START=true`, cada boot do storage zera timeline e saldo inicial)
-
-## Ver o lab no terminal
-
-No **Docker local**, `compose up` mostra só linhas **`[lab-ops]`** (subida/erro por container). O **`lab-tail`** roda em segundo plano (`attach: false`) e não repete a narrativa no mesmo terminal.
+Na mesma rede: mDNS (UDP **5353**), TCP **4000** e portas do anel (**3002+**). **Um** banco primário por LAN.
 
 ```bash
-docker compose --profile local --env-file lab.env up --build   # ops + status Docker
-docker compose --profile local logs -f lab-tail                 # narrativa global (PC · nó · papel)
+git clone git@github.com:GabrielFSSantos/ring-coordinator-lab.git
+cd ring-coordinator-lab
+chmod +x lab
 ```
 
-Defina `LAB_HOST_NAME` no `lab.env` de cada PC para distinguir máquinas na LAN.
+## Quatro comandos principais
 
-### Observador em qualquer PC (LAN)
+| Comando | O que faz |
+| --- | --- |
+| `./lab storage` | Só o banco (`ring-storage` ou processo nativo com `--native`) |
+| `./lab start` | Quatro nós Docker em primeiro plano (Ctrl+C para); `--native` = 4 processos no host |
+| `./lab node` | Um nó no PC (nativo); `--docker` = container `ring-node-join` |
+| `./lab logs` | Visualizador de narrativa no host (poll na timeline do storage) |
 
-O banco fica **só** no PC-A; leitura (`GET /v1/balance`, `/v1/ledger`, `/v1/timeline-events`) é HTTP **sem token** na porta 4000. Em todo PC, use o **mesmo** `STORAGE_URL=http://<IP-PC-A>:4000`.
+Auxiliares: `./lab health`, `./lab down`.
 
-Três formas de ver a narrativa global (`lab_host_name` de cada evento):
+**Ordem livre:** pode subir `./lab start` ou `./lab node` antes do banco; o líder **rejeita** transações até o storage responder. `./lab storage` depois dos nós e o cluster volta a gravar.
 
-1. Docker: `./scripts/lan-tail.sh` ou `docker compose --profile tail --env-file lab.env up` + `logs -f lan-tail`
-2. Sem Docker: `cd src && npm run tail` (defina `STORAGE_URL` no `lab.env`)
-3. No PC do banco, o profile `storage` já inclui `lan-tail` (`logs -f lan-tail`)
+**Exemplo sala (um PC demo):**
 
-No mesmo PC, não suba dois `lan-tail` (mesmo `container_name`). Teste de rede: `curl http://<IP-BANCO>:4000/v1/health`.
+```bash
+./lab storage          # terminal 1 (ou antes/depois dos nós)
+./lab start            # terminal 2 — ou LAB_START_DETACHED=1 ./lab start
+./lab logs             # terminal 3
+```
 
-Ajustes visuais: `LOG_STYLE=box`, `LOG_DETAIL=false`, `LOG_TX_STORY=true`. Detalhes: [docs/documentation/19_convencoes_codigo_e_logs.md](docs/documentation/19_convencoes_codigo_e_logs.md).
+Se mDNS falhar: `LAB_STORAGE_HOST=<IP-do-banco>` no `lab.env` e suba de novo.
 
-Carga simulada orgânica: **1 tx por ciclo** por nó, intervalos distintos no compose (10 s / 5 s / 8 s / 7 s) — melhor leitura no `lab-tail`. Ajuste em runtime: `PATCH /v1/simulation` com `txIntervalSec`.
+Banco nativo + nós Docker: após `./lab storage --native`, o `lab.env` define `LAB_DOCKER_STORAGE_URL=http://host.docker.internal:4000` para os containers.
 
 ## Testes
 
@@ -63,4 +48,10 @@ Carga simulada orgânica: **1 tx por ciclo** por nó, intervalos distintos no co
 cd src && npm ci && npm test
 ```
 
-Gate: `~/GitHub/Workspaces/ring-coordinator-lab/harness/checks/run-gate.sh`
+Gate: `Workspaces/ring-coordinator-lab/harness/checks/run-gate.sh`
+
+Aceite E2E:
+
+```bash
+LAB_ACCEPTANCE_START=1 harness/checks/run-acceptance.sh
+```

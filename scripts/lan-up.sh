@@ -1,40 +1,10 @@
 #!/usr/bin/env bash
-# Sobe o lab com profiles do docker compose.
-# Uso (na raiz do repo):
-#   ./scripts/lan-up.sh local
-#   ./scripts/lan-up.sh storage
-#   ./scripts/lan-up.sh nodes
-#   ./scripts/lan-up.sh both    # storage + nodes
-#   ./scripts/lan-up.sh tail    # só narrativa (STORAGE_URL remoto)
-
-set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODE="${1:-local}"
-ENV_FILE="${LAB_ENV_FILE:-$ROOT/lab.env}"
-
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Arquivo não encontrado: $ENV_FILE (copie lab.env.example → lab.env)" >&2
-  exit 1
-fi
-
-case "$MODE" in
-  local)
-    exec docker compose --profile local --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build --remove-orphans "${@:2}"
-    ;;
-  storage)
-    exec docker compose --profile storage --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build "${@:2}"
-    ;;
-  nodes)
-    exec docker compose --profile nodes --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build "${@:2}"
-    ;;
-  both)
-    exec docker compose --profile storage --profile nodes --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build "${@:2}"
-    ;;
-  tail)
-    exec docker compose --profile tail --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" up --build "${@:2}"
-    ;;
-  *)
-    echo "Modo: local | storage | nodes | both | tail" >&2
-    exit 1
-    ;;
+# Compat: nomes antigos → lab-up.sh
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+case "${1:-full}" in
+  local|both|full) set -- full "${@:2}" ;;
+  storage) set -- storage "${@:2}" ;;
+  nodes) set -- worker "${@:2}" ;;
+  tail) set -- tail "${@:2}" ;;
 esac
+exec "$ROOT/lab-up.sh" "$@"

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+LAB_USE_NATIVE=0
+LAB_USE_DOCKER=0
+LAB_ARGS=()
+
+lab_shift_flags() {
+  LAB_USE_NATIVE=0
+  LAB_USE_DOCKER=0
+  LAB_ARGS=()
+  for arg in "$@"; do
+    case "$arg" in
+      --native | -n)
+        LAB_USE_NATIVE=1
+        ;;
+      --docker)
+        LAB_USE_DOCKER=1
+        ;;
+      *)
+        LAB_ARGS+=("$arg")
+        ;;
+    esac
+  done
+}
+
+lab_want_native() {
+  if [[ "$LAB_USE_NATIVE" == "1" ]]; then
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker não encontrado; usando runtime nativo (Node)." >&2
+    return 0
+  fi
+  return 1
+}
+
+# shellcheck source=scripts/lab-compose.sh
+source "$ROOT/scripts/lab-compose.sh"
+mapfile -t COMPOSE_FILES < <(lab_compose_files)
+
+CMD="${1:-}"
+lab_shift_flags "${@:2}"
+
+case "$CMD" in
+  start)
+    if lab_want_native; then
+      exec "$ROOT/scripts/lab-native-start.sh" "${LAB_ARGS[@]}"
+    fi
+    exec "$ROOT/scripts/lab-host.sh" "${LAB_ARGS[@]}"
+    ;;
+  join)
+    echo "Comando removido: use ./lab start (4 nós) ou ./lab node (1 nó)." >&2
+    exit 1
+    ;;
+  tail)
+    echo "Comando removido: use ./lab logs (nativo no host)." >&2
+    exit 1
+    ;;
+  storage|node)
+    export LAB_USE_NATIVE="$LAB_USE_NATIVE"
+    export LAB_USE_DOCKER="$LAB_USE_DOCKER"
+    exec "$ROOT/scripts/lab-component.sh" "$CMD" "${LAB_ARGS[@]}"
+    ;;
+  logs)
+    exec "$ROOT/scripts/lab-native-logs.sh" "${LAB_ARGS[@]}"
+    ;;
+  down)
+    if [[ -f "$ROOT/.lab/native.pids" ]] && [[ -s "$ROOT/.lab/native.pids" ]]; then
+      "$ROOT/scripts/lab-native-down.sh" "${LAB_ARGS[@]}"
+    fi
+    if command -v docker >/dev/null 2>&1; then
+      lab_compose_profiles_all
+      docker compose --env-file "$ROOT/lab.env" "${COMPOSE_FILES[@]}" down --remove-orphans "${LAB_ARGS[@]}"
+    fi
+    ;;
+  health)
+    exec "$ROOT/scripts/lab-health.sh" "${LAB_ARGS[@]}"
+    ;;
+  "")
+    echo "Uso: ./lab storage|start|node|logs|health|down [--native|-n] [--docker]" >&2
+    exit 1
+    ;;
+  *)
+    echo "Comando desconhecido: $CMD" >&2
+    exit 1
+    ;;
+esac

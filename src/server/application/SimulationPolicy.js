@@ -1,11 +1,16 @@
 class SimulationPolicy {
   constructor(config) {
     this.mode = config.simMode;
-    this.txEnabled = true;
+    this.txEnabled =
+      config.simTxEnabled !== undefined
+        ? config.simTxEnabled
+        : config.simMode === "auto";
     this.txBurst = config.simTxBurst;
     this.txIntervalMs = config.simTxIntervalMs;
     this.txJitterMs = config.simTxJitterMs;
-    this.killEnabled = config.simMode === "auto";
+    this.leaderSelfTermEnabled = !!config.simLeaderSelfTermEnabled;
+    this.leaderTenureMs = config.simLeaderTenureMs || 0;
+    this.killEnabled = false;
     this.killIntervalMs = config.simLeaderKillIntervalMs;
     this.deltaMode = "random";
     this.deltaFixed = null;
@@ -26,6 +31,8 @@ class SimulationPolicy {
       txIntervalMs: this.txIntervalMs,
       txIntervalSec: Math.max(1, Math.round(this.txIntervalMs / 1000)),
       txJitterMs: this.txJitterMs,
+      leaderSelfTermEnabled: this.leaderSelfTermEnabled,
+      leaderTenureMs: this.leaderTenureMs,
       killEnabled: this.killEnabled,
       killIntervalMs: this.killIntervalMs,
       deltaMode: this.deltaMode,
@@ -47,6 +54,12 @@ class SimulationPolicy {
     }
     if (body.txIntervalMs != null) {
       this.txIntervalMs = Math.max(1000, parseInt(body.txIntervalMs, 10));
+    }
+    if (body.leaderSelfTermEnabled != null) {
+      this.leaderSelfTermEnabled = !!body.leaderSelfTermEnabled;
+    }
+    if (body.leaderTenureMs != null) {
+      this.leaderTenureMs = Math.max(0, parseInt(body.leaderTenureMs, 10));
     }
     if (body.killEnabled != null) this.killEnabled = !!body.killEnabled;
     if (body.killIntervalMs != null) {

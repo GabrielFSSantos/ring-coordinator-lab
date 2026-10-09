@@ -6,13 +6,17 @@ describe("ElectionService", () => {
     expect(ElectionService.shouldParticipateFirstWave(3005, [3002])).toBe(false);
   });
 
-  it("restarts election when initiator port is lower than local", () => {
-    expect(
-      ElectionService.shouldRestartElection(3005, [3002, 3003], false)
-    ).toBe(true);
-    expect(
-      ElectionService.shouldRestartElection(3002, [3002, 3003], false)
-    ).toBe(false);
+  it("joins mid-ring when first list port is lower than local", () => {
+    expect(ElectionService.shouldJoinMidRing(3005, [3002, 3003], false)).toBe(
+      true
+    );
+    expect(ElectionService.shouldJoinMidRing(3003, [3002], false)).toBe(true);
+    expect(ElectionService.shouldJoinMidRing(3002, [3002, 3003], false)).toBe(
+      false
+    );
+    expect(ElectionService.shouldJoinMidRing(3005, [3002, 3005], false)).toBe(
+      false
+    );
   });
 
   it("picks coordinator as max port", () => {

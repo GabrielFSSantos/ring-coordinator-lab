@@ -23,6 +23,14 @@ Separação útil para **relatório**, **banca** e **edição de código**: o qu
 | Alta disponibilidade do recurso | Postgres único (SPOF) |
 | Mutex distribuído no anel | Mutex é **centralizado** no coordenador |
 
+## Storage na LAN
+
+| Afirmação | Comportamento |
+| --- | --- |
+| Um primário writable por LAN (mDNS) | Segundo `STORAGE_MODE=primary` vira **standby** e aponta para o remoto |
+| Nós e tail adotam URL canônica | mDNS + estado do cluster (debounce) |
+| Primário cai | TX rejeitadas; **sem** failover automático para outro SQLite |
+
 ## Limitações de implementação (engenharia)
 
 Documentadas também em [engineering_backlog.md](engineering_backlog.md):

@@ -22,4 +22,18 @@ describe("TransactionStoryLogger", () => {
     expect(blocks[0].join(" ")).toContain("ubuntu-node-2");
     expect(blocks[0].join(" ")).toContain("Gravado no banco");
   });
+
+  it("story when leader accepts without storage", () => {
+    const blocks = [];
+    const logger = {
+      config: { logTxStory: true },
+      story: (_role, lines) => blocks.push(lines),
+    };
+    const story = new TransactionStoryLogger(logger, { config: {} });
+    story.onAcceptedWithoutStorage({
+      requestId: "r2",
+      nodeName: "ubuntu-node-3",
+    });
+    expect(blocks[0].join(" ")).toContain("não gravou");
+  });
 });

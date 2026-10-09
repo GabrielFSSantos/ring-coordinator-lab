@@ -48,8 +48,59 @@ function resolveSimTxInitialStaggerMs(env, nodePort, advertisePortBase) {
   return 0;
 }
 
+function resolveDiscoveryMode(env = process.env) {
+  const explicit = (env.DISCOVERY_MODE || "").toLowerCase().trim();
+  if (explicit) return explicit;
+  if ((env.CLUSTER_PEERS || "").trim()) return "manual";
+  return "mdns";
+}
+
+function resolveSimTxEnabled(env = process.env) {
+  if (env.SIM_TX_ENABLED !== undefined && env.SIM_TX_ENABLED !== "") {
+    return env.SIM_TX_ENABLED === "true" || env.SIM_TX_ENABLED === "1";
+  }
+  return (env.SIM_MODE || "auto").toLowerCase() === "auto";
+}
+
+function resolveLeaderTenureMs(env = process.env) {
+  if (env.SIM_LEADER_TENURE_MS !== undefined && env.SIM_LEADER_TENURE_MS !== "") {
+    return parseInt(env.SIM_LEADER_TENURE_MS, 10);
+  }
+  if (
+    env.SIM_LEADER_KILL_INTERVAL_MS !== undefined &&
+    env.SIM_LEADER_KILL_INTERVAL_MS !== ""
+  ) {
+    return parseInt(env.SIM_LEADER_KILL_INTERVAL_MS, 10);
+  }
+  return 90_000;
+}
+
+function resolveLeaderSelfTermEnabled(env = process.env) {
+  if (env.SIM_LEADER_SELF_TERM !== undefined && env.SIM_LEADER_SELF_TERM !== "") {
+    return env.SIM_LEADER_SELF_TERM === "true" || env.SIM_LEADER_SELF_TERM === "1";
+  }
+  const tenure = resolveLeaderTenureMs(env);
+  return (env.SIM_MODE || "auto").toLowerCase() === "auto" && tenure > 0;
+}
+
+function resolveStorageUrl(env = process.env) {
+  const raw = (env.STORAGE_URL || "").replace(/\/$/, "");
+  if (raw) return raw;
+  const role = (env.LAB_ROLE || "").toLowerCase();
+  const port = env.STORAGE_HTTP_PORT || "4000";
+  const localRoles = new Set(["host", "start", "storage"]);
+  if (localRoles.has(role)) {
+    return `http://127.0.0.1:${port}`;
+  }
+  const lanHost = (env.LAB_STORAGE_HOST || "").trim();
+  if (lanHost) {
+    return `http://${lanHost}:${port}`.replace(/\/$/, "");
+  }
+  return "";
+}
+
 function loadConfig() {
-  const discoveryMode = (process.env.DISCOVERY_MODE || "off").toLowerCase();
+  const discoveryMode = resolveDiscoveryMode(process.env);
   const port = parseInt(process.env.NODE_PORT, 10);
   const peerMap = buildPeerMap(
     process.env.CLUSTER_PEERS,
@@ -69,7 +120,8 @@ function loadConfig() {
     clusterPeers: process.env.CLUSTER_PEERS || "",
     bootstrapPeer: process.env.BOOTSTRAP_PEER || "",
 
-    storageUrl: (process.env.STORAGE_URL || "").replace(/\/$/, ""),
+    storageUrl: resolveStorageUrl(process.env),
+    labRole: (process.env.LAB_ROLE || "").toLowerCase(),
     storageWriteToken: process.env.STORAGE_WRITE_TOKEN || "lab-write-token",
 
     databasePath: process.env.DATABASE_PATH || "./data/log.db",
@@ -77,7 +129,10 @@ function loadConfig() {
     useStorageHttp:
       process.env.USE_STORAGE_HTTP === "false"
         ? false
-        : boolEnv("USE_STORAGE_HTTP", !!process.env.STORAGE_URL),
+        : boolEnv(
+            "USE_STORAGE_HTTP",
+            !!resolveStorageUrl(process.env) || discoveryMode === "mdns"
+          ),
     advertisePortBase: parseInt(process.env.ADVERTISE_PORT_BASE || "3002", 10),
 
     peerConnectTimeoutMs: parseInt(
@@ -91,9 +146,10 @@ function loadConfig() {
     ),
     queueLimit: parseInt(process.env.QUEUE_LIMIT || "6", 10),
     electionDebounceMs: parseInt(
-      process.env.ELECTION_DEBOUNCE_MS || "500",
+      process.env.ELECTION_DEBOUNCE_MS || "2000",
       10
     ),
+    leaderCooldownMs: parseInt(process.env.LEADER_COOLDOWN_MS || "25000", 10),
 
     labProfile: process.env.LAB_PROFILE || "",
     discoveryMode,
@@ -108,7 +164,10 @@ function loadConfig() {
       discoveryMode === "mdns" || discoveryMode === "manual"
     ),
 
-    simMode: (process.env.SIM_MODE || "manual").toLowerCase(),
+    simMode: (process.env.SIM_MODE || "auto").toLowerCase(),
+    simTxEnabled: resolveSimTxEnabled(process.env),
+    simLeaderSelfTermEnabled: resolveLeaderSelfTermEnabled(process.env),
+    simLeaderTenureMs: resolveLeaderTenureMs(process.env),
     simTxBurst: Math.min(
       1,
       Math.max(1, parseInt(process.env.SIM_TX_BURST || "1", 10))
@@ -133,7 +192,7 @@ function loadConfig() {
     simLeaderKillInitiator: process.env.SIM_LEADER_KILL_INITIATOR || "",
 
     clientBufferOnLeaderLoss: boolEnv("CLIENT_BUFFER_ON_LEADER_LOSS", true),
-    discardOnStorageDown: boolEnv("DISCARD_ON_STORAGE_DOWN", true),
+    discardOnStorageDown: boolEnv("DISCARD_ON_STORAGE_DOWN", false),
     clientBufferLimit: parseInt(process.env.CLIENT_BUFFER_LIMIT || "50", 10),
 
     logEnabled: boolEnv("LOG_ENABLED", true),
@@ -177,4 +236,9 @@ module.exports = {
   ORGANIC_TX_INTERVAL_SEC_BY_INDEX,
   resolveSimTxIntervalMs,
   resolveSimTxInitialStaggerMs,
+  resolveDiscoveryMode,
+  resolveStorageUrl,
+  resolveSimTxEnabled,
+  resolveLeaderTenureMs,
+  resolveLeaderSelfTermEnabled,
 };

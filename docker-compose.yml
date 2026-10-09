@@ -1,200 +1,127 @@
-# Local: docker compose --profile local --env-file lab.env up --build
-# LAN:   docker compose --profile storage|nodes|tail --env-file lab.env up --build
-# Remova órfãos antigos (postgres/pgadmin): --remove-orphans
+# Perfis: storage (banco), local (4 nós), node (1 container)
+# ./lab storage | ./lab start | ./lab node --docker
+
+x-app-build: &app-build
+  build:
+    context: .
+    dockerfile: src/Dockerfile
 
 x-node-common: &node-common
-  build:
-    context: .
-    dockerfile: src/Dockerfile
+  <<: *app-build
+  command: ["node", "server/bootstrap/main.js"]
   env_file:
     - lab.env
-  environment:
+  environment: &node-env-common
     USE_STORAGE_HTTP: "true"
-    SIM_MODE: manual
     LOG_STDOUT_MODE: "off"
     SIM_TX_BURST: "1"
-  depends_on:
-    - storage
+    STORAGE_URL: ${LAB_DOCKER_STORAGE_URL:-http://storage:4000}
+    DOCKER_PEER_CONNECT_HOST: host.docker.internal
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   networks:
-    app_network: {}
+    - lab
 
-x-lan-tail-common: &lan-tail-common
-  attach: false
-  build:
-    context: .
-    dockerfile: src/Dockerfile
-  container_name: lan-tail
-  command: ["node", "log-viewer/bootstrap/main.js"]
-  env_file:
-    - lab.env
-  environment:
-    HOSTNAME: lab-tail
-    LAB_HOST_NAME: lab-tail
-    LOG_STDOUT_MODE: timeline_all
-    LOG_TIMELINE_PERSIST: "true"
-  network_mode: host
+networks:
+  lab:
 
 services:
   storage:
-    profiles: ["local"]
-    build:
-      context: .
-      dockerfile: src/Dockerfile
+    <<: *app-build
+    profiles:
+      - storage
     container_name: ring-storage
     command: ["node", "storage/bootstrap/main.js"]
     env_file:
       - lab.env
     environment:
-      LAB_HOST_NAME: storage-primary
-      ADVERTISE_HOST: 172.25.0.10
-      STORAGE_MODE: primary
-      STORAGE_HTTP_PORT: 4000
       DATABASE_PATH: /data/ledger.db
       LEDGER_SCHEMA_PATH: /app/schema-ledger.sql
       LOG_STDOUT_MODE: "off"
-      STORAGE_URL: http://172.25.0.10:4000
+    networks:
+      - lab
+    ports:
+      - "4000:4000"
     volumes:
       - ./data:/data
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.10
-    ports:
-      - "${STORAGE_HTTP_PORT:-4000}:4000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/v1/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 8s
 
-  ubuntu-node-2:
-    profiles: ["local"]
+  node-3002:
     <<: *node-common
-    container_name: ubuntu-node-2
+    profiles:
+      - local
+    container_name: ubuntu-node-3002
     environment:
-      HOSTNAME: ubuntu-node-2
-      IP_LOCAL: 172.25.0.2
-      ADVERTISE_HOST: 172.25.0.2
-      NODE_PORT: 3002
-      NODE_HTTP_PORT: 4002
-      SIM_TX_INTERVAL_MS: "10000"
-      USE_STORAGE_HTTP: "true"
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.2
+      <<: *node-env-common
+      NODE_PORT: "3002"
+      NODE_HTTP_PORT: "4002"
+      HOSTNAME: ubuntu-node-3002
     ports:
       - "3002:3002"
       - "4002:4002"
 
-  ubuntu-node-3:
-    profiles: ["local"]
+  node-3003:
     <<: *node-common
-    container_name: ubuntu-node-3
+    profiles:
+      - local
+    container_name: ubuntu-node-3003
     environment:
-      HOSTNAME: ubuntu-node-3
-      IP_LOCAL: 172.25.0.3
-      ADVERTISE_HOST: 172.25.0.3
-      NODE_PORT: 3003
-      NODE_HTTP_PORT: 4003
-      SIM_TX_INTERVAL_MS: "5000"
-      USE_STORAGE_HTTP: "true"
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.3
+      <<: *node-env-common
+      NODE_PORT: "3003"
+      NODE_HTTP_PORT: "4003"
+      HOSTNAME: ubuntu-node-3003
     ports:
       - "3003:3003"
       - "4003:4003"
 
-  ubuntu-node-4:
-    profiles: ["local"]
+  node-3004:
     <<: *node-common
-    container_name: ubuntu-node-4
+    profiles:
+      - local
+    container_name: ubuntu-node-3004
     environment:
-      HOSTNAME: ubuntu-node-4
-      IP_LOCAL: 172.25.0.4
-      ADVERTISE_HOST: 172.25.0.4
-      NODE_PORT: 3004
-      NODE_HTTP_PORT: 4004
-      SIM_TX_INTERVAL_MS: "8000"
-      USE_STORAGE_HTTP: "true"
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.4
+      <<: *node-env-common
+      NODE_PORT: "3004"
+      NODE_HTTP_PORT: "4004"
+      HOSTNAME: ubuntu-node-3004
     ports:
       - "3004:3004"
       - "4004:4004"
 
-  ubuntu-node-5:
-    profiles: ["local"]
+  node-3005:
     <<: *node-common
-    container_name: ubuntu-node-5
+    profiles:
+      - local
+    container_name: ubuntu-node-3005
     environment:
-      HOSTNAME: ubuntu-node-5
-      IP_LOCAL: 172.25.0.5
-      ADVERTISE_HOST: 172.25.0.5
-      NODE_PORT: 3005
-      NODE_HTTP_PORT: 4005
-      SIM_TX_INTERVAL_MS: "7000"
-      USE_STORAGE_HTTP: "true"
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.5
+      <<: *node-env-common
+      NODE_PORT: "3005"
+      NODE_HTTP_PORT: "4005"
+      HOSTNAME: ubuntu-node-3005
     ports:
       - "3005:3005"
       - "4005:4005"
 
-  lab-tail:
-    profiles: ["local"]
-    attach: false
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    container_name: lab-tail
-    command: ["node", "log-viewer/bootstrap/main.js"]
-    env_file:
-      - lab.env
+  node-join:
+    <<: *node-common
+    profiles:
+      - node
+    container_name: ring-node-join
     environment:
-      LAB_HOST_NAME: lab-tail
-      HOSTNAME: lab-tail
-      LOG_STDOUT_MODE: timeline_all
-      STORAGE_URL: http://172.25.0.10:4000
-      LOG_TIMELINE_PERSIST: "true"
-    depends_on:
-      - storage
-    networks:
-      app_network:
-        ipv4_address: 172.25.0.20
-
-  # LAN: storage | nodes | tail (observador) — ver lab.env.example
-  lan-storage:
-    profiles: ["storage"]
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    command: ["node", "storage/bootstrap/main.js"]
-    env_file:
-      - lab.env
-    environment:
-      STORAGE_MODE: primary
-      DATABASE_PATH: /data/ledger.db
-      LEDGER_SCHEMA_PATH: /app/schema-ledger.sql
-    network_mode: host
-    volumes:
-      - ./data:/data
-
-  lan-tail:
-    profiles: ["storage", "tail"]
-    <<: *lan-tail-common
-
-  lan-node:
-    profiles: ["nodes"]
-    build:
-      context: .
-      dockerfile: src/Dockerfile
-    command: ["node", "server/bootstrap/main.js"]
-    env_file:
-      - lab.env
-    environment:
-      USE_STORAGE_HTTP: "true"
-    network_mode: host
-
-networks:
-  app_network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.25.0.0/16
+      <<: *node-env-common
+      NODE_PORT: ${ADVERTISE_PORT_BASE:-3006}
+      HOSTNAME: ring-node-join
+    ports:
+      - "${ADVERTISE_PORT_BASE:-3006}:${ADVERTISE_PORT_BASE:-3006}"
+      - "${NODE_JOIN_HTTP_PORT:-4006}:${NODE_JOIN_HTTP_PORT:-4006}"

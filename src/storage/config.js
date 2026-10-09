@@ -1,5 +1,8 @@
 const path = require("path");
-const { parseLogStdoutMode } = require("../server/config/env");
+const {
+  parseLogStdoutMode,
+  resolveDiscoveryMode,
+} = require("../server/config/env");
 
 function boolEnv(name, defaultVal) {
   const v = process.env[name];
@@ -37,6 +40,13 @@ function loadStorageConfig() {
       process.env.LOG_DOCKER_OPS !== undefined
         ? boolEnv("LOG_DOCKER_OPS", false)
         : parseLogStdoutMode(process.env.LOG_STDOUT_MODE) !== "direct",
+    discoveryMode: resolveDiscoveryMode(process.env),
+    discoveryStorageType:
+      process.env.DISCOVERY_STORAGE_TYPE || "_ring-storage-lab._tcp.local",
+    storagePrimaryBrowseMs: parseInt(
+      process.env.STORAGE_PRIMARY_BROWSE_MS || "3500",
+      10
+    ),
   };
 }
 
